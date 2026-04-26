@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多圖層繪圖</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ══ TOP BAR ══════════════════════════════════════════ -->
+<div id="topbar">
+  <span id="app-title">多圖層繪圖</span>
+  <div class="sep"></div>
+  <button class="btn primary" onclick="cmdNew()">新建專案</button>
+  <button class="btn"         onclick="cmdSave()">儲存專案</button>
+  <button class="btn"         onclick="cmdOpen()">開啟專案</button>
+  <button class="btn danger"  onclick="cmdDelete()">刪除專案</button>
+  <div class="sep"></div>
+  <button class="btn" onclick="cmdExport()">匯出專案</button>
+  <button class="btn" onclick="cmdImport()">匯入專案</button>
+  <div class="sep"></div>
+  <button class="btn" onclick="cmdInsertImage()">插入圖片</button>
+  <button class="btn" onclick="cmdExportImage()">匯出圖檔</button>
+  <button class="btn" onclick="cmdPrint()">列印</button>
+  <div class="sep"></div>
+  <button class="btn icon-only" id="btn-undo" onclick="undo()" title="撤銷 (Ctrl+Z)">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h10a6 6 0 1 1 0 12H7"/><polyline points="3 7 7 3 7 11"/></svg>
+  </button>
+  <button class="btn icon-only" id="btn-redo" onclick="redo()" title="重做 (Ctrl+Y)">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7H11a6 6 0 1 0 0 12h6"/><polyline points="21 7 17 3 17 11"/></svg>
+  </button>
+  <div class="sep"></div>
+  <span id="proj-label">專案：</span>
+  <span id="proj-name" title="雙擊改名" ondblclick="startRenameProj()">未命名</span>
+  <input id="proj-name-input" style="display:none" onblur="commitRenameProj()" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){cancelRenameProj();}">
+  <span id="dirty-dot"> ●</span>
+</div>
+
+<!-- ══ MAIN ═════════════════════════════════════════════ -->
+<div id="main">
+
+  <!-- LEFT TOOLBAR -->
+  <div id="toolbar">
+    <button class="tool-btn" id="btn-select" onclick="setTool('select')" title="選取 (V)"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 0L7.5 4H9v5H4V7.5L0 10l4 2.5V11h5v5H7.5L10 20l2.5-4H11v-5h5v1.5L20 10l-4-2.5V9h-5V4h1.5Z"/></svg></button>
+    <button class="tool-btn" id="btn-hand"   onclick="setTool('hand')"   title="手型拖曳 (H)">✋</button>
+    <div class="tdiv"></div>
+    <button class="tool-btn active" id="btn-brush"  onclick="setTool('brush')"  title="筆刷 (B)">✏️</button>
+    <button class="tool-btn"        id="btn-eraser" onclick="setTool('eraser')" title="橡皮擦 (E)">🧹</button>
+    <div id="car-tool-wrap">
+      <button class="tool-btn" id="btn-car" onclick="setTool('car')" title="小汽車 (C)">🚗</button>
+      <div id="car-picker">
+        <div class="car-opt active" data-t="car"   onclick="setCarType('car',this)">  <span class="opt-icon">🚗</span><span>小汽車</span></div>
+        <div class="car-opt"        data-t="truck" onclick="setCarType('truck',this)"><span class="opt-icon">🛻</span><span>小貨車</span></div>
+        <div class="car-opt"        data-t="bus"   onclick="setCarType('bus',this)">  <span class="opt-icon">🚌</span><span>公車</span></div>
+        <div class="car-opt"        data-t="semi"  onclick="setCarType('semi',this)"> <span class="opt-icon">🚛</span><span>大貨車</span></div>
+        <div class="car-opt"        data-t="artic" onclick="setCarType('artic',this)"><span class="opt-icon">🚛</span><span>聯結車</span></div>
+      </div>
+    </div>
+    <div id="moto-tool-wrap">
+      <button class="tool-btn" id="btn-moto" onclick="setTool('moto')" title="機車 (M)">🏍</button>
+      <div id="moto-picker">
+        <div class="moto-opt active" data-v="right" onclick="setMotoVariant('right',this)"><span class="opt-icon">▶</span><span>右向側視圖</span></div>
+        <div class="moto-opt"        data-v="left"  onclick="setMotoVariant('left',this)"> <span class="opt-icon">◀</span><span>左向側視圖</span></div>
+        <div class="moto-opt"        data-v="top"   onclick="setMotoVariant('top',this)">  <span class="opt-icon">⊙</span><span>俯視圖</span></div>
+      </div>
+    </div>
+    <div id="marking-tool-wrap">
+      <button class="tool-btn" id="btn-marking" onclick="setTool('marking')" title="標線 (L)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><rect x="1" y="6.5" width="16" height="2.2" rx="1.1"/><rect x="1" y="10.3" width="16" height="2.2" rx="1.1"/></svg></button>
+      <div id="marking-picker">
+        <div class="marking-opt active" data-v="dbl-solid"    onclick="setMarkingVariant('dbl-solid',this)">   <span class="opt-icon">══</span><span>雙實線</span></div>
+        <div class="marking-opt"        data-v="single-solid"  onclick="setMarkingVariant('single-solid',this)"> <span class="opt-icon">─</span><span>單實線</span></div>
+        <div class="marking-opt"        data-v="single-dashed" onclick="setMarkingVariant('single-dashed',this)"><span class="opt-icon">╌</span><span>單虛線</span></div>
+        <div class="marking-opt"        data-v="zebra"         onclick="setMarkingVariant('zebra',this)">        <span class="opt-icon">▌▌▌</span><span>斑馬線</span></div>
+        <div class="marking-opt"        data-v="turn"          onclick="setMarkingVariant('turn',this)">         <span class="opt-icon">└</span><span>轉彎處</span></div>
+        <div class="marking-opt"        data-v="grid"          onclick="setMarkingVariant('grid',this)">         <span class="opt-icon">⊠</span><span>網狀線</span></div>
+        <div class="marking-opt"        data-v="moto-zone"     onclick="setMarkingVariant('moto-zone',this)">    <span class="opt-icon">🏍</span><span>機車停等區</span></div>
+        <div class="marking-opt"        data-v="parking"       onclick="setMarkingVariant('parking',this)">      <span class="opt-icon">🅿</span><span>停車格</span></div>
+        <div class="marking-opt"        data-v="rect"          onclick="setMarkingVariant('rect',this)">          <span class="opt-icon">▬</span><span>實色矩形</span></div>
+        <div class="marking-opt"        data-v="arrow"         onclick="setMarkingVariant('arrow',this)">         <span class="opt-icon">↑</span><span>直行箭頭</span></div>
+        <div class="marking-opt"        data-v="arrow-turn"    onclick="setMarkingVariant('arrow-turn',this)">    <span class="opt-icon">↱</span><span>轉向箭頭</span></div>
+        <div class="marking-opt"        data-v="arrow-straight-turn" onclick="setMarkingVariant('arrow-straight-turn',this)"><span class="opt-icon">⬆↱</span><span>直行轉向</span></div>
+      </div>
+    </div>
+    <div id="mtext-tool-wrap">
+      <button class="tool-btn" id="btn-marking-text" onclick="setTool('marking-text')" title="標字">字</button>
+      <div id="mtext-picker">
+        <div class="mtext-opt active" data-v="stop"     onclick="setMarkingTextVariant('stop',this)">    <span class="opt-icon">停</span><span>停</span></div>
+        <div class="mtext-opt"        data-v="yield"    onclick="setMarkingTextVariant('yield',this)">   <span class="opt-icon">讓</span><span>讓</span></div>
+        <div class="mtext-opt"        data-v="slow"     onclick="setMarkingTextVariant('slow',this)">    <span class="opt-icon">慢</span><span>慢</span></div>
+        <div class="mtext-opt"        data-v="no-moto"  onclick="setMarkingTextVariant('no-moto',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">禁行<br>机车</span><span>禁行机车</span></div>
+        <div class="mtext-opt"        data-v="crosswalk" onclick="setMarkingTextVariant('crosswalk',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">人行<br>道</span><span>人行道</span></div>
+        <div class="mtext-opt"        data-v="wait-turn" onclick="setMarkingTextVariant('wait-turn',this)"><span class="opt-icon" style="font-size:9px">待转区</span><span>待转区</span></div>
+        <div class="mtext-opt"        data-v="bus-only"  onclick="setMarkingTextVariant('bus-only',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公车<br>专用</span><span>公车专用</span></div>
+        <div class="mtext-opt"        data-v="bus-stop"  onclick="setMarkingTextVariant('bus-stop',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公车<br>停靠</span><span>公车停靠区</span></div>
+        <div class="mtext-opt"        data-v="moto-only" onclick="setMarkingTextVariant('moto-only',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">机车<br>专用</span><span>机车专用</span></div>
+        <div class="mtext-opt"        data-v="moto-slow" onclick="setMarkingTextVariant('moto-slow',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">机慢<br>车专</span><span>机慢车专用</span></div>
+      </div>
+    </div>
+    <div id="symbol-tool-wrap">
+      <button class="tool-btn" id="btn-symbol" onclick="setTool(symbolType)" title="符號">⊙</button>
+      <div id="symbol-picker">
+        <div class="symbol-opt active" data-t="hydrant"  onclick="setSymbolType('hydrant',this)"> <span class="opt-icon">🔴</span><span>消防栓</span></div>
+        <div class="symbol-opt"        data-t="compass"  onclick="setSymbolType('compass',this)"> <span class="opt-icon">🧭</span><span>指北針</span></div>
+        <div class="symbol-opt"        data-t="refpoint" onclick="setSymbolType('refpoint',this)"><span class="opt-icon">☯</span><span>基準點</span></div>
+      </div>
+    </div>
+    <div class="tdiv"></div>
+    <button class="tool-btn" id="btn-freetext" onclick="setTool('freetext')" title="文字 (T)"><b style="font-size:15px">T</b></button>
+    <div class="tdiv"></div>
+    <div id="color-wrap" title="選色">
+      <div id="color-swatch"></div>
+      <input type="color" id="color-input" value="#000000" oninput="setColor(this.value)">
+    </div>
+    <div class="tdiv"></div>
+    <span id="size-lbl">大小</span>
+    <input type="range" id="size-range" min="1" max="120" value="10"
+           oninput="setBrushSize(this.value)">
+    <span id="size-val">10</span>
+  </div>
+
+  <!-- CANVAS AREA -->
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="checker"></div>
+      <canvas id="display-canvas"></canvas>
+      <div id="special-edit-overlay" style="display:none"></div>
+    </div>
+  </div>
+  <div id="special-edit-bar" style="display:none;position:fixed;top:48px;left:50%;transform:translateX(-50%);z-index:9990;background:var(--panel);border:1px solid var(--accent);border-radius:8px;padding:6px 16px;display:none;gap:10px;align-items:center;">
+    <span style="font-size:12px;color:var(--accent)">文字編輯模式</span>
+    <label style="font-size:12px;color:var(--text)">字</label>
+    <input type="number" id="seo-fs" min="6" max="60" value="13" style="width:42px;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:1px 4px;font-size:13px" onchange="seoSetFS(this.value)">
+    <span style="font-size:12px;color:var(--text)">px</span>
+    <button class="btn primary" onclick="exitSpecialEditMode()">完成</button>
+    <button class="btn" onclick="exitSpecialEditMode(false)">取消</button>
+  </div>
+
+  <!-- LAYERS PANEL -->
+  <div id="layers-panel">
+    <div id="layers-hdr">
+      <span id="layers-hdr-title">圖層</span>
+      <div class="icon-btns">
+        <div id="special-layer-wrap">
+          <button class="icon-btn" onclick="toggleSpecialLayerPicker(event)" title="新增特殊圖層">★</button>
+          <div id="special-layer-picker">
+            <div class="special-layer-opt" onclick="addSpecialLayer('base')">底圖（格線表格）</div>
+            <div class="special-layer-opt" onclick="addSpecialLayer('top')">頂層圖（空白表格）</div>
+          </div>
+        </div>
+        <button class="icon-btn"        onclick="addLayer()"       title="新增圖層">＋</button>
+        <button class="icon-btn"        onclick="duplicateLayer()" title="複製圖層">⧉</button>
+        <button class="icon-btn danger" onclick="deleteLayer()"    title="刪除圖層">🗑</button>
+      </div>
+    </div>
+    <div id="layers-list"></div>
+    <div id="props-panel">
+      <div id="props-hdr">物件屬性</div>
+<div id="props-body"><div class="props-empty">未選取物件</div></div>
+    </div>
+    <div id="hist-wrap">
+      <div id="hist-hdr">
+        <span>歷史記錄</span>
+        <button class="icon-btn" onclick="clearHist()" title="清除歷史">✕</button>
+      </div>
+      <div id="hist-list"><div class="hist-empty">暫無記錄</div></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- ZOOM BAR -->
+<div id="zoom-bar">
+  <button onclick="adjustZoom(-0.25)">−</button>
+  <span id="zoom-pct">100%</span>
+  <button onclick="adjustZoom(0.25)">＋</button>
+  <button onclick="resetZoom()" style="font-size:11px;margin-left:2px">重置</button>
+</div>
+
+<!-- MODAL -->
+<div id="modal-bg" class="overlay" style="display:none" onclick="closeBg(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modal-title"></h3>
+    <div id="modal-body"></div>
+    <div class="modal-acts" id="modal-acts"></div>
+  </div>
+</div>
+
+<!-- Toast 提示 -->
+<div id="toast"></div>
+
+<!-- 框選覆蓋層 -->
+<div id="rubber-overlay"></div>
+
+<!-- 旋轉角度標籤 -->
+<div id="rot-label">
+  <input id="rot-input" type="number" step="0.1" title="旋轉角度（度）">
+  <span id="rot-suffix">°</span>
+</div>
+
+<!-- 右鍵選單 -->
+<div id="ctx-menu">
+  <div class="ctx-item" id="ctx-copy"   onclick="ctxCopy()">  <span>複製</span><span class="ctx-shortcut">Ctrl+C</span></div>
+  <div class="ctx-item" id="ctx-cut"    onclick="ctxCut()">   <span>剪下</span><span class="ctx-shortcut">Ctrl+X</span></div>
+  <div class="ctx-item" id="ctx-paste"  onclick="ctxPaste()"> <span>貼上</span><span class="ctx-shortcut">Ctrl+V</span></div>
+  <div class="ctx-sep" id="ctx-color-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-color-item" style="display:none">
+    <span>選擇顏色</span><span>▶</span>
+    <div id="ctx-color-sub">
+      <div class="ctx-item" onclick="setObjColor('#212121')"><span class="ctx-color-dot" style="background:#212121"></span><span>黑色</span></div>
+      <div class="ctx-item" onclick="setObjColor('#c62828')"><span class="ctx-color-dot" style="background:#c62828"></span><span>紅色</span></div>
+      <div class="ctx-item" onclick="setObjColor('#f9a825')"><span class="ctx-color-dot" style="background:#f9a825"></span><span>黃色</span></div>
+      <div class="ctx-item" onclick="setObjColor('#1565c0')"><span class="ctx-color-dot" style="background:#1565c0"></span><span>藍色</span></div>
+    </div>
+  </div>
+  <div class="ctx-sep" id="ctx-mcolor-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-mcolor-item" style="display:none">
+    <span>選擇顏色</span><span>▶</span>
+    <div id="ctx-mcolor-sub">
+      <div class="ctx-item" onclick="setObjColor('#f9c400')"><span class="ctx-color-dot" style="background:#f9c400"></span><span>黃色</span></div>
+      <div class="ctx-item" onclick="setObjColor('#ffffff')"><span class="ctx-color-dot" style="background:#ffffff;border-color:#555"></span><span>白色</span></div>
+      <div class="ctx-item" onclick="setObjColor('#e53935')"><span class="ctx-color-dot" style="background:#e53935"></span><span>紅色</span></div>
+    </div>
+  </div>
+  <div class="ctx-sep" id="ctx-thick-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-thick-item" style="display:none" onclick="event.stopPropagation()">
+    <span>粗細</span>
+    <input type="range" id="ctx-thick-slider" min="1" max="80" value="10"
+           oninput="setObjThicknessLive(this.value)"
+           onchange="saveSnap('調整粗細')">
+    <span id="ctx-thick-val">10</span>
+  </div>
+  <div class="ctx-sep" id="ctx-refline-style-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-refline-style-item" style="display:none">
+    <span>調整樣式</span><span>▶</span>
+    <div id="ctx-refline-style-sub">
+      <div class="ctx-item" onclick="setReflineDash(false)"><span>─────</span><span>實線</span></div>
+      <div class="ctx-item" onclick="setReflineDash(true)"> <span>╌╌╌╌╌</span><span>虛線</span></div>
+    </div>
+  </div>
+  <div class="ctx-sep" id="ctx-cell-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-cell-item" style="display:none" onclick="event.stopPropagation()">
+    <span>密度</span>
+    <input type="range" id="ctx-cell-slider" min="10" max="120" value="30"
+           oninput="setCellSizeLive(this.value)"
+           onchange="saveSnap('調整密度')">
+    <span id="ctx-cell-val">30</span>
+  </div>
+  <div class="ctx-sep" id="ctx-count-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-count-item" style="display:none" onclick="event.stopPropagation()">
+    <span>數量</span>
+    <input type="range" id="ctx-count-slider" min="1" max="10" value="3"
+           oninput="setParkingCountLive(this.value)"
+           onchange="saveSnap('調整停車格數量')">
+    <span id="ctx-count-val">3</span>
+  </div>
+  <div class="ctx-sep" id="ctx-posmark-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-posmark-item" style="display:none">
+    <span>標記定位</span><span>▶</span>
+    <div id="ctx-posmark-sub">
+      <div class="ctx-item" onclick="ctxMarkPosition('corner')"><span>四角定位</span></div>
+      <div class="ctx-item" onclick="ctxMarkPosition('wheel')"><span>車輪定位</span></div>
+    </div>
+  </div>
+  <div class="ctx-item" id="ctx-posmark-moto" style="display:none" onclick="ctxMarkPosition('wheel')"><span>標記定位</span></div>
+  <div class="ctx-item" id="ctx-posmark-remove" style="display:none" onclick="ctxRemovePositionMark()"><span>移除定位標記</span></div>
+  <div class="ctx-sep" id="ctx-sizemark-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-sizemark-item" style="display:none" onclick="ctxMarkSizeMarks()"><span>標記車長車寬</span></div>
+  <div class="ctx-item" id="ctx-sizemark-remove" style="display:none" onclick="ctxRemoveSizeMarks()"><span>移除車長車寬</span></div>
+  <div class="ctx-sep" id="ctx-refline-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-refline-create" style="display:none" onclick="ctxCreateRefline()"><span>建立基準線</span></div>
+  <div class="ctx-item" id="ctx-refline-delete" style="display:none" onclick="ctxDeleteRefline()"><span>刪除基準線</span></div>
+  <div class="ctx-sep" id="ctx-namerp-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-namerp-item" style="display:none" onclick="ctxCreateReflabel()"><span>命名基準點</span></div>
+  <div class="ctx-sep" id="ctx-rpstyle-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-rpstyle-item" style="display:none">
+    <span>調整樣式</span><span>▶</span>
+    <div id="ctx-rpstyle-sub">
+      <div class="ctx-item" onclick="setRefpointStyle('s')">    <span class="opt-icon">⊙</span><span>S型</span></div>
+      <div class="ctx-item" onclick="setRefpointStyle('cross')"><span class="opt-icon">⊗</span><span>叉型</span></div>
+    </div>
+  </div>
+  <div class="ctx-sep" id="ctx-fontsize-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-fontsize-item" style="display:none" onclick="event.stopPropagation()">
+    <span>調整大小</span>
+    <input type="range" id="ctx-fontsize-slider" min="8" max="48" value="14"
+           oninput="setReflabelFontSizeLive(this.value)"
+           onchange="saveSnap('調整文字大小')">
+    <span id="ctx-fontsize-val">14</span>
+  </div>
+  <div class="ctx-sep" id="ctx-radius-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-radius-item" style="display:none" onclick="event.stopPropagation()">
+    <span>調整半徑</span>
+    <input type="range" id="ctx-radius-slider" min="20" max="200" value="60"
+           oninput="setReflabelRadiusLive(this.value)"
+           onchange="saveSnap('調整軌道半徑')">
+    <span id="ctx-radius-val">60</span>
+  </div>
+  <div class="ctx-sep" id="ctx-reflabel-edit-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-reflabel-edit-item" style="display:none" onclick="ctxReflabelEdit()"><span>編輯</span></div>
+  <div class="ctx-sep" id="ctx-mlabel-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-mlabel-edit" style="display:none" onclick="ctxMeasureEdit()"><span>編輯數字</span></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-mlabel-perp" style="display:none" onclick="event.stopPropagation()">
+    <span style="font-size:12px">垂直距離</span>
+    <input type="range" id="ctx-mperp-slider" min="-200" max="200" value="20" oninput="ctxMeasurePerpChange(this.value)" style="width:80px">
+    <span id="ctx-mperp-val">20</span>
+  </div>
+  <div class="ctx-item ctx-thick-row" id="ctx-mlabel-size" style="display:none" onclick="event.stopPropagation()">
+    <span style="font-size:12px">大小</span>
+    <input type="range" id="ctx-msize-slider" min="8" max="40" value="11" oninput="ctxMeasureSizeChange(this.value)" style="width:80px">
+    <span id="ctx-msize-val">11</span>
+  </div>
+  <div class="ctx-item" id="ctx-mlabel-color" style="display:none" onclick="event.stopPropagation()">
+    <span style="font-size:12px">顏色</span>
+    <input type="color" id="ctx-mcolor2" value="#e53935" oninput="ctxMeasureColorChange(this.value)">
+  </div>
+  <div class="ctx-sep" id="ctx-flip-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-flip-h" style="display:none" onclick="ctxFlip('flipH')"><span>水平翻轉 ↔</span></div>
+  <div class="ctx-item" id="ctx-flip-v" style="display:none" onclick="ctxFlip('flipV')"><span>垂直翻轉 ↕</span></div>
+  <div class="ctx-sep" id="ctx-zorder-sep"></div>
+  <div class="ctx-item" id="ctx-zorder-top"    onclick="ctxZOrder('top')">   <span>置於頂層</span></div>
+  <div class="ctx-item" id="ctx-zorder-up"     onclick="ctxZOrder('up')">    <span>上移一層</span></div>
+  <div class="ctx-item" id="ctx-zorder-down"   onclick="ctxZOrder('down')">  <span>下移一層</span></div>
+  <div class="ctx-item" id="ctx-zorder-bottom" onclick="ctxZOrder('bottom')"><span>置於底層</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" id="ctx-delete" onclick="ctxDelete()"><span>刪除</span><span class="ctx-shortcut">Del</span></div>
+</div>
+
+<div id="reflabel-edit-wrap">
+  <input id="reflabel-edit-input" type="text" autocomplete="off" spellcheck="false">
+</div>
+<!-- Layer right-click menu -->
+<div id="layer-ctx-menu" style="display:none">
+  <div class="lctx-item" id="lctx-rename" onclick="lctxRename()">重命名圖層</div>
+  <div class="lctx-sep" id="lctx-edit-sep" style="display:none"></div>
+  <div class="lctx-item" id="lctx-edit" style="display:none" onclick="lctxEdit()">文字編輯</div>
+</div>
+<div id="freetext-edit-wrap">
+  <textarea id="freetext-edit-input" rows="3" autocomplete="off" spellcheck="false"></textarea>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
