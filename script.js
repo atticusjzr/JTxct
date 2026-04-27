@@ -383,6 +383,8 @@ function drawObjOnCtx(ctx, obj) {
     drawMarkingArrowStraightTurn(ctx, obj);
   } else if (obj.type === 'marking-arrow-three-way') {
     drawMarkingArrowThreeWay(ctx, obj);
+  } else if (obj.type === 'marking-hashbox') {
+    drawMarkingHashbox(ctx, obj);
   } else if (obj.type === 'marking-text') {
     drawMarkingText(ctx, obj);
   } else if (obj.type === 'hydrant') {
@@ -1508,7 +1510,7 @@ const OBJ_TYPE_NAMES = {
   'marking-turn':'轉彎處', 'marking-grid':'網狀線',
   'marking-moto-zone':'機車停等區', 'marking-parking':'停車格',
   'marking-rect':'實色矩形', 'marking-text':'標字',
-  'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭',
+  'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-hashbox':'導流線',
   'freetext': '文字',
 };
 
@@ -1543,7 +1545,7 @@ function updatePropsPanel() {
   const HAS_ROT = new Set(['car','truck','bus','semi','artic','moto','hydrant','compass',
     'marking-single-solid','marking-single-dashed','marking-dbl-solid','marking-zebra',
     'marking-grid','marking-moto-zone','marking-parking','marking-rect','marking-text',
-    'marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way']);
+    'marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-hashbox']);
   if (HAS_ROT.has(t)) {
     const deg = Math.round(((obj.rotation || 0) * 180 / Math.PI + 360) % 360);
     rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="number" id="pr-rotation" min="0" max="359" value="${deg}" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
@@ -2021,8 +2023,8 @@ function resizeMarkingThickness(obj, isTopEdge, mx, my) {
   const proj = isTopEdge
     ? ( dvx * sinR - dvy * cosR)
     : (-dvx * sinR + dvy * cosR);
-  const hMin = obj.type === 'marking-zebra' ? 20  : 8;
-  const hMax = obj.type === 'marking-zebra' ? 600 : 80;
+  const hMin = obj.type === 'marking-zebra' || obj.type === 'marking-hashbox' ? 20  : 8;
+  const hMax = obj.type === 'marking-zebra' || obj.type === 'marking-hashbox' ? 600 : 80;
   const newH = Math.max(hMin, Math.min(hMax, Math.abs(proj)));
 
   // New center: from anchor toward dragged long edge
@@ -2888,8 +2890,8 @@ function onMove(e) {
     } else if (selectState === 'resize') {
       const obj = objects[selectedObjs[0]];
       const _boxMarking = new Set(['marking-grid','marking-moto-zone','marking-parking',
-        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-text']);
-      if (_boxMarking.has(obj.type)) {
+        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-hashbox','marking-text']);
+      if (obj.type === 'marking-hashbox' || _boxMarking.has(obj.type)) {
         resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
       } else if (obj.type.startsWith('marking-')) {
         resizeMarkingLength(obj, selectCorner === 1 || selectCorner === 2, pt.x, pt.y, true);
@@ -2899,8 +2901,14 @@ function onMove(e) {
     } else if (selectState === 'edge') {
       const obj = objects[selectedObjs[0]];
       const _boxMarking = new Set(['marking-grid','marking-moto-zone','marking-parking',
-        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-text']);
-      if (_boxMarking.has(obj.type)) {
+        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-hashbox','marking-text']);
+      if (obj.type === 'marking-hashbox') {
+        if (selectCorner === 0 || selectCorner === 2) {
+          resizeMarkingThickness(obj, selectCorner === 0, pt.x, pt.y);
+        } else {
+          resizeMarkingLength(obj, false, pt.x, pt.y); // 永远固定半圆端(右端)
+        }
+      } else if (_boxMarking.has(obj.type)) {
         resizeEdge(obj, selectCorner, pt.x, pt.y);
       } else if (obj.type.startsWith('marking-')) {
         if (selectCorner === 0 || selectCorner === 2) {
@@ -4324,6 +4332,7 @@ function markingVariantToTypeColor(v) {
   if (v === 'arrow-turn')    return { type: 'marking-arrow-turn',    color: '#ffffff' };
   if (v === 'arrow-straight-turn') return { type: 'marking-arrow-straight-turn', color: '#ffffff' };
   if (v === 'arrow-three-way')    return { type: 'marking-arrow-three-way',    color: '#ffffff' };
+  if (v === 'hashbox')            return { type: 'marking-hashbox',           color: '#ffffff' };
   return { type: 'marking-dbl-solid', color: '#f9c400' }; // 'dbl-solid' + legacy
 }
 
@@ -4964,6 +4973,50 @@ function drawMarkingArrowThreeWay(ctx, obj) {
   }
   ctx.restore();
 }
+function drawMarkingHashbox(ctx, obj) {
+  const { x, y, w, h, color } = obj;
+  const r  = h / 2;
+  const ex = x + w, ey = y + r;          // 半圆圆心
+  const lw = Math.max(1.5, h * 0.04);    // 线宽
+  const sp = Math.max(h * 0.55, 12);     // 斜线间距（和 h 成比例）
+  const clr = color || '#ffffff';
+
+  ctx.save();
+
+  // clip 到标线范围（矩形 + 半圆）
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(ex, y);
+  ctx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+  ctx.clip();
+
+  // 45 度斜线填充
+  ctx.strokeStyle = clr;
+  ctx.lineWidth   = lw;
+  for (let off = -h; off < w + h; off += sp) {
+    ctx.beginPath();
+    ctx.moveTo(x + off,     y + h);
+    ctx.lineTo(x + off + h, y);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // 外框线：上边 + 半圆 + 下边（左端开放）
+  ctx.save();
+  ctx.strokeStyle = clr;
+  ctx.lineWidth   = lw;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(ex, y);
+  ctx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(x, y + h);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawMoto(ctx, x, y, w, h, clr, variant) {
   ctx.save();
   if (variant === 'left') {
