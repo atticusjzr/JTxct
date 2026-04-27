@@ -891,7 +891,8 @@ body {
         <div class="marking-opt"        data-v="arrow-turn"    onclick="setMarkingVariant('arrow-turn',this)">    <span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>轉向箭頭</span></div>
         <div class="marking-opt"        data-v="arrow-straight-turn" onclick="setMarkingVariant('arrow-straight-turn',this)"><span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>直行轉向</span></div>
         <div class="marking-opt"        data-v="arrow-three-way"    onclick="setMarkingVariant('arrow-three-way',this)">    <span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>三向箭頭</span></div>
-        <div class="marking-opt"        data-v="hashbox"          onclick="setMarkingVariant('hashbox',this)">          <span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>槽化線</span></div>
+        <div class="marking-opt"        data-v="sepisle"          onclick="setMarkingVariant('sepisle',this)">          <span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>分隔島</span></div>
+        <div class="marking-opt"        data-v="chanl"            onclick="setMarkingVariant('chanl',this)">            <span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>槽化線</span></div>
       </div>
     </div>
     <div id="mtext-tool-wrap">
@@ -1502,7 +1503,7 @@ function drawVehicle(ctx, x, y, w, h, clr, type) {
 function drawObjOnCtx(ctx, obj) {
   ctx.save();
   if (obj.opacity !== undefined && obj.opacity < 1) ctx.globalAlpha *= obj.opacity;
-  const _noObjTx = obj.type === 'marking-turn' || obj.type === 'refline' || obj.type === 'reflabel' || obj.type === 'freetext';
+  const _noObjTx = obj.type === 'marking-turn' || obj.type === 'marking-chanl' || obj.type === 'refline' || obj.type === 'reflabel' || obj.type === 'freetext';
   if (!_noObjTx && (obj.rotation || obj.flipH || obj.flipV)) {
     const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
     ctx.translate(cx, cy);
@@ -1536,8 +1537,10 @@ function drawObjOnCtx(ctx, obj) {
     drawMarkingArrowStraightTurn(ctx, obj);
   } else if (obj.type === 'marking-arrow-three-way') {
     drawMarkingArrowThreeWay(ctx, obj);
-  } else if (obj.type === 'marking-hashbox') {
+  } else if (obj.type === 'marking-sepisle') {
     drawMarkingHashbox(ctx, obj);
+  } else if (obj.type === 'marking-chanl') {
+    drawMarkingChanl(ctx, obj);
   } else if (obj.type === 'marking-text') {
     drawMarkingText(ctx, obj);
   } else if (obj.type === 'hydrant') {
@@ -1587,7 +1590,7 @@ function getMidpoints(obj) {
 
 function getRotHandle(obj) {
   const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
-  if (obj.type === 'marking-turn') {
+  if (obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
     return { x: cx, y: obj.y - 28 };
   }
   const dist = obj.h / 2 + 28;
@@ -1619,6 +1622,12 @@ function hitHandle(pt, obj) {
     if (ptOnMarkingTurn(pt, obj)) return { type: 'move' };
     return null;
   }
+  if (obj.type === 'marking-chanl') {
+    const th = hitChanlHandle(pt, obj);
+    if (th) return th;
+    if (ptOnMarkingChanl(pt, obj)) return { type: 'move' };
+    return null;
+  }
   const corners = getCorners(obj);
   for (let i = 0; i < 4; i++) {
     if (dist2(pt, corners[i]) <= hr*hr) return { type: 'corner', idx: i };
@@ -1637,6 +1646,7 @@ function hitHandle(pt, obj) {
 function drawSelHandles(ctx, obj) {
   ctx.save();
   if (obj.type === 'marking-turn') { drawTurnHandles(ctx, obj); ctx.restore(); return; }
+  if (obj.type === 'marking-chanl') { drawChanlHandles(ctx, obj); ctx.restore(); return; }
   if (obj.type === 'refline')      { drawReflineHandles(ctx, obj); ctx.restore(); return; }
   if (obj.type === 'position-mark') {
     const ep = _posMarkEndpoints(obj);
@@ -2062,6 +2072,85 @@ function ptOnMarkingTurn(pt, obj) {
   const r = (obj.thickness || 10) / 2 + 4 / zoom;
   return ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a1x, obj.cy+obj.a1y, r)
       || ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a2x, obj.cy+obj.a2y, r);
+}
+
+// ── marking-chanl geometry ─────────────────────────────────
+function ptOnMarkingChanl(pt, obj) {
+  const r = (obj.thickness || 10) / 2 + 4 / zoom;
+  return ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a1x, obj.cy+obj.a1y, r)
+      || ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a2x, obj.cy+obj.a2y, r);
+}
+function getChanlHandles(obj) {
+  return {
+    a1End:  { x: obj.cx + obj.a1x,   y: obj.cy + obj.a1y },
+    a1Mid:  { x: obj.cx + obj.a1x/2, y: obj.cy + obj.a1y/2 },
+    corner: { x: obj.cx,             y: obj.cy },
+    a2Mid:  { x: obj.cx + obj.a2x/2, y: obj.cy + obj.a2y/2 },
+    a2End:  { x: obj.cx + obj.a2x,   y: obj.cy + obj.a2y },
+  };
+}
+function hitChanlHandle(pt, obj) {
+  const hr = 9 / zoom;
+  const h = getChanlHandles(obj);
+  if (dist2(pt, h.a1End)  <= hr*hr) return { type: 'chanl-a1e' };
+  if (dist2(pt, h.a2End)  <= hr*hr) return { type: 'chanl-a2e' };
+  if (dist2(pt, h.a1Mid)  <= hr*hr) return { type: 'chanl-a1m' };
+  if (dist2(pt, h.a2Mid)  <= hr*hr) return { type: 'chanl-a2m' };
+  if (dist2(pt, h.corner) <= hr*hr) return { type: 'chanl-cor' };
+  return null;
+}
+function drawChanlHandles(ctx, obj) {
+  const h = getChanlHandles(obj);
+  const hr = 5 / zoom, lw = 1.5 / zoom;
+  function dot(p, fill, stroke) {
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.arc(p.x, p.y, hr, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+  }
+  dot(h.a1End,  '#fff', '#e53935');
+  dot(h.a2End,  '#fff', '#e53935');
+  dot(h.a1Mid,  '#fff', '#43a047');
+  dot(h.a2Mid,  '#fff', '#43a047');
+  dot(h.corner, '#1e88e5', '#fff');
+}
+function applyChanlDrag(obj, orig, state, pt) {
+  switch (state) {
+    case 'chanl-a1e': {
+      const a1L = Math.sqrt(orig.a1x**2+orig.a1y**2); if (a1L<0.1) break;
+      const nx=orig.a1x/a1L, ny=orig.a1y/a1L;
+      const proj = Math.max(10, (pt.x-orig.cx)*nx+(pt.y-orig.cy)*ny);
+      obj.a1x=nx*proj; obj.a1y=ny*proj; break;
+    }
+    case 'chanl-a2e': {
+      const a2L = Math.sqrt(orig.a2x**2+orig.a2y**2); if (a2L<0.1) break;
+      const nx=orig.a2x/a2L, ny=orig.a2y/a2L;
+      const proj = Math.max(10, (pt.x-orig.cx)*nx+(pt.y-orig.cy)*ny);
+      obj.a2x=nx*proj; obj.a2y=ny*proj; break;
+    }
+    case 'chanl-a1m': {
+      const dx=pt.x-orig.cx, dy=pt.y-orig.cy, len=Math.sqrt(dx*dx+dy*dy); if (len<0.1) break;
+      const a1L=Math.sqrt(orig.a1x**2+orig.a1y**2);
+      const a2L=Math.sqrt(orig.a2x**2+orig.a2y**2);
+      const { nx, ny } = clampArmDir(dx/len, dy/len, orig.a2x/a2L, orig.a2y/a2L);
+      obj.a1x=nx*a1L; obj.a1y=ny*a1L; break;
+    }
+    case 'chanl-a2m': {
+      const dx=pt.x-orig.cx, dy=pt.y-orig.cy, len=Math.sqrt(dx*dx+dy*dy); if (len<0.1) break;
+      const a1L=Math.sqrt(orig.a1x**2+orig.a1y**2);
+      const a2L=Math.sqrt(orig.a2x**2+orig.a2y**2);
+      const { nx, ny } = clampArmDir(dx/len, dy/len, orig.a1x/a1L, orig.a1y/a1L);
+      obj.a2x=nx*a2L; obj.a2y=ny*a2L; break;
+    }
+    case 'chanl-cor': {
+      // Move apex; arm endpoints stay fixed in world space
+      const e1x = orig.cx + orig.a1x, e1y = orig.cy + orig.a1y;
+      const e2x = orig.cx + orig.a2x, e2y = orig.cy + orig.a2y;
+      obj.cx = pt.x; obj.cy = pt.y;
+      obj.a1x = e1x - pt.x; obj.a1y = e1y - pt.y;
+      obj.a2x = e2x - pt.x; obj.a2y = e2y - pt.y;
+      break;
+    }
+  }
 }
 
 function getTurnHandles(obj) {
@@ -2663,7 +2752,7 @@ const OBJ_TYPE_NAMES = {
   'marking-turn':'轉彎處', 'marking-grid':'網狀線',
   'marking-moto-zone':'機車停等區', 'marking-parking':'停車格',
   'marking-rect':'實色矩形', 'marking-text':'標字',
-  'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-hashbox':'槽化線',
+  'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-sepisle':'分隔島', 'marking-chanl':'槽化線',
   'freetext': '文字',
 };
 
@@ -2698,7 +2787,7 @@ function updatePropsPanel() {
   const HAS_ROT = new Set(['car','truck','bus','semi','artic','moto','hydrant','compass',
     'marking-single-solid','marking-single-dashed','marking-dbl-solid','marking-zebra',
     'marking-grid','marking-moto-zone','marking-parking','marking-rect','marking-text',
-    'marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-hashbox']);
+    'marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle']);
   if (HAS_ROT.has(t)) {
     const deg = Math.round(((obj.rotation || 0) * 180 / Math.PI + 360) % 360);
     rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="number" id="pr-rotation" min="0" max="359" value="${deg}" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
@@ -2738,7 +2827,7 @@ function updatePropsPanel() {
   }
 
   // Thickness
-  const HAS_THICK = new Set(['refpoint','refline','marking-turn','marking-grid','marking-moto-zone','marking-parking']);
+  const HAS_THICK = new Set(['refpoint','refline','marking-turn','marking-chanl','marking-grid','marking-moto-zone','marking-parking']);
   if (HAS_THICK.has(t)) {
     rows.push(`<div class="prop-row"><label>線條粗細</label><input type="number" id="pr-thickness" min="1" max="60" value="${obj.thickness || 3}" onchange="propSetThickness(this.value)"><span class="prop-val">px</span></div>`);
   }
@@ -2902,7 +2991,7 @@ function propSetRotation(v) {
 }
 function propToggleFlip(axis) {
   const o = _propObj(); if (!o) return;
-  if (o.type === 'marking-turn') {
+  if (o.type === 'marking-turn' || o.type === 'marking-chanl') {
     if (axis === 'flipH') { o.a1x = -o.a1x; o.a2x = -o.a2x; }
     else                  { o.a1y = -o.a1y; o.a2y = -o.a2y; }
     syncTurnBBox(o);
@@ -2917,7 +3006,7 @@ function ctxFlip(axis) {
   if (!selectedObjs.length) return;
   selectedObjs.forEach(i => {
     if (!objects[i]) return;
-    if (objects[i].type === 'marking-turn') {
+    if (objects[i].type === 'marking-turn' || objects[i].type === 'marking-chanl') {
       if (axis === 'flipH') { objects[i].a1x = -objects[i].a1x; objects[i].a2x = -objects[i].a2x; }
       else                  { objects[i].a1y = -objects[i].a1y; objects[i].a2y = -objects[i].a2y; }
       syncTurnBBox(objects[i]);
@@ -3176,8 +3265,8 @@ function resizeMarkingThickness(obj, isTopEdge, mx, my) {
   const proj = isTopEdge
     ? ( dvx * sinR - dvy * cosR)
     : (-dvx * sinR + dvy * cosR);
-  const hMin = obj.type === 'marking-zebra' || obj.type === 'marking-hashbox' ? 20  : 8;
-  const hMax = obj.type === 'marking-zebra' || obj.type === 'marking-hashbox' ? 600 : 80;
+  const hMin = obj.type === 'marking-zebra' || obj.type === 'marking-sepisle' ? 20  : 8;
+  const hMax = obj.type === 'marking-zebra' || obj.type === 'marking-sepisle' ? 600 : 80;
   const newH = Math.max(hMin, Math.min(hMax, Math.abs(proj)));
 
   // New center: from anchor toward dragged long edge
@@ -3731,8 +3820,9 @@ function onDown(e) {
           if (foundPM < 0 && ptOnSizeMark(pt, objects[i])) foundPM = i;
           continue;
         }
-        const unselTurn = objects[i].type === 'marking-turn' && !selectedObjs.includes(i);
-        if (unselTurn ? ptOnMarkingTurn(pt, objects[i]) : ptInObj(pt, objects[i])) {
+        const unselTurn = (objects[i].type === 'marking-turn' || objects[i].type === 'marking-chanl') && !selectedObjs.includes(i);
+        const unselHit  = objects[i].type === 'marking-chanl' ? ptOnMarkingChanl(pt, objects[i]) : ptOnMarkingTurn(pt, objects[i]);
+        if (unselTurn ? unselHit : ptInObj(pt, objects[i])) {
           found = i; break;
         }
       }
@@ -3784,7 +3874,7 @@ function onDown(e) {
           selectState = 'rotate';
           const cx = orig.x + orig.w / 2, cy = orig.y + orig.h / 2;
           rotPrevAngle = Math.atan2(pt.y - cy, pt.x - cx);
-          if (orig.type !== 'marking-turn') showRotLabel(orig);
+          if (orig.type !== 'marking-turn' && orig.type !== 'marking-chanl') showRotLabel(orig);
         } else if (hit.type === 'refline-p2') {
           selectState = hit.type;
         } else if (hit.type === 'refline-p1') {
@@ -3812,6 +3902,8 @@ function onDown(e) {
             showTurnValueLabel(getTurnHandles(orig).corner,
               ((orig.radius || 0)).toFixed(1), 'px');
           }
+        } else if (hit.type.startsWith('chanl-')) {
+          selectState = hit.type;
         } else {
           selectState = 'move';
         }
@@ -3934,7 +4026,7 @@ function onMove(e) {
       selectedObjs.forEach((idx, i) => {
         if (!objects[idx]) return;
         const orig = selectObjOrig[i];
-        if (objects[idx].type === 'marking-turn') {
+        if (objects[idx].type === 'marking-turn' || objects[idx].type === 'marking-chanl') {
           objects[idx].cx = anchorWorld.x + (orig.cx - anchorWorld.x) * scale;
           objects[idx].cy = anchorWorld.y + (orig.cy - anchorWorld.y) * scale;
           objects[idx].a1x = orig.a1x * scale;
@@ -3997,7 +4089,7 @@ function onMove(e) {
         const orig = selectObjOrig[i];
         objects[idx].x = orig.x + dx;
         objects[idx].y = orig.y + dy;
-        if (objects[idx].type === 'marking-turn') {
+        if (objects[idx].type === 'marking-turn' || objects[idx].type === 'marking-chanl') {
           objects[idx].cx = orig.cx + dx;
           objects[idx].cy = orig.cy + dy;
         }
@@ -4040,11 +4132,16 @@ function onMove(e) {
           ((obj.radius || 0)).toFixed(1), 'px');
       }
       composite(); return;
+    } else if (selectState.startsWith('chanl-')) {
+      const obj = objects[selectedObjs[0]];
+      applyChanlDrag(obj, selectObjOrig[0], selectState, pt);
+      syncTurnBBox(obj);
+      composite(); return;
     } else if (selectState === 'resize') {
       const obj = objects[selectedObjs[0]];
       const _boxMarking = new Set(['marking-grid','marking-moto-zone','marking-parking',
-        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-hashbox','marking-text']);
-      if (obj.type === 'marking-hashbox' || _boxMarking.has(obj.type)) {
+        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle','marking-text']);
+      if (obj.type === 'marking-sepisle' || _boxMarking.has(obj.type)) {
         resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
       } else if (obj.type.startsWith('marking-')) {
         resizeMarkingLength(obj, selectCorner === 1 || selectCorner === 2, pt.x, pt.y, true);
@@ -4054,8 +4151,8 @@ function onMove(e) {
     } else if (selectState === 'edge') {
       const obj = objects[selectedObjs[0]];
       const _boxMarking = new Set(['marking-grid','marking-moto-zone','marking-parking',
-        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-hashbox','marking-text']);
-      if (obj.type === 'marking-hashbox') {
+        'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle','marking-text']);
+      if (obj.type === 'marking-sepisle') {
         if (selectCorner === 0 || selectCorner === 2) {
           resizeMarkingThickness(obj, selectCorner === 0, pt.x, pt.y);
         } else {
@@ -4080,7 +4177,7 @@ function onMove(e) {
       if (delta >  Math.PI) delta -= 2 * Math.PI;
       if (delta < -Math.PI) delta += 2 * Math.PI;
       const obj = objects[selectedObjs[0]];
-      if (obj.type === 'marking-turn') {
+      if (obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
         const cos = Math.cos(delta), sin = Math.sin(delta);
         const dcx = orig.cx - cx, dcy = orig.cy - cy;
         obj.cx = cx + dcx*cos - dcy*sin;
@@ -4174,6 +4271,17 @@ function onMove(e) {
       if (rw > 8 && rh > 8) {
         dCtx.save(); dCtx.translate(CANVAS_MARGIN, CANVAS_MARGIN); dCtx.globalAlpha = 0.80;
         drawMarkingTurn(dCtx, { cx:rx, cy:ry+rh, a1x:0, a1y:-rh, a2x:rw, a2y:0, thickness:10, color:_mc, radius:0 });
+        dCtx.restore();
+      }
+      return;
+    }
+    if (_mt === 'marking-chanl') {
+      const rx = Math.min(lastPt.x, pt.x), ry = Math.min(lastPt.y, pt.y);
+      const rw = Math.abs(pt.x - lastPt.x), rh = Math.abs(pt.y - lastPt.y);
+      if (rw > 8 && rh > 8) {
+        const tan15 = Math.tan(Math.PI / 12);
+        dCtx.save(); dCtx.translate(CANVAS_MARGIN, CANVAS_MARGIN); dCtx.globalAlpha = 0.80;
+        drawMarkingChanl(dCtx, { cx:rx, cy:ry+rh/2, a1x:rw, a1y:-tan15*rw, a2x:rw, a2y:tan15*rw, thickness:10, color:_mc });
         dCtx.restore();
       }
       return;
@@ -4405,6 +4513,18 @@ function onUp(e) {
           objects.push(tobj);
           didDraw = true;
         }
+      } else if (mType === 'marking-chanl') {
+        const rx = Math.min(lastPt.x, pt2.x), ry = Math.min(lastPt.y, pt2.y);
+        const rw = Math.abs(pt2.x - lastPt.x), rh = Math.abs(pt2.y - lastPt.y);
+        if (rw > 10 && rh > 10) {
+          const tan15 = Math.tan(Math.PI / 12);
+          const cobj = { type:'marking-chanl', cx:rx, cy:ry+rh/2, a1x:rw, a1y:-tan15*rw, a2x:rw, a2y:tan15*rw,
+                         thickness:10, color:mColor, rotation:0, x:0, y:0, w:0, h:0 };
+          syncTurnBBox(cobj);
+          cobj.layerId = layers[activeIdx].id;
+          objects.push(cobj);
+          didDraw = true;
+        }
       } else {
         const dx = pt2.x - lastPt.x, dy = pt2.y - lastPt.y;
         const len = Math.sqrt(dx*dx + dy*dy);
@@ -4623,7 +4743,7 @@ function setObjThicknessLive(v) {
   document.getElementById('ctx-thick-val').textContent = val;
   selectedObjs.forEach(i => {
     if (!objects[i]) return;
-    if (['marking-turn','marking-grid','marking-moto-zone','marking-parking','refpoint','refline'].includes(objects[i].type)) objects[i].thickness = val;
+    if (['marking-turn','marking-chanl','marking-grid','marking-moto-zone','marking-parking','refpoint','refline'].includes(objects[i].type)) objects[i].thickness = val;
     else if (objects[i].type.startsWith('marking-')) objects[i].h = val;
   });
   composite(); markDirty();
@@ -4677,7 +4797,7 @@ function showCtxMenu(e) {
       if (hitPM < 0 && ptOnPositionMark(pt, o)) hitPM = i;
       continue;
     }
-    if (o.type === 'marking-turn' ? ptOnMarkingTurn(pt, o) : ptInObj(pt, o)) { hitIdx = i; break; }
+    if (o.type === 'marking-chanl' ? ptOnMarkingChanl(pt, o) : o.type === 'marking-turn' ? ptOnMarkingTurn(pt, o) : ptInObj(pt, o)) { hitIdx = i; break; }
   }
   if (hitIdx < 0) hitIdx = hitPM;
   if (hitIdx >= 0 && !selectedObjs.includes(hitIdx)) {
@@ -4716,7 +4836,7 @@ function showCtxMenu(e) {
   if (hasThick) {
     const mi = selectedObjs.find(i => objects[i] && (objects[i].type.startsWith('marking-') || objects[i].type === 'refpoint' || objects[i].type === 'refline'));
     if (mi !== undefined) {
-      const cur = ['marking-turn','marking-grid','marking-moto-zone','marking-parking','refpoint','refline'].includes(objects[mi].type)
+      const cur = ['marking-turn','marking-chanl','marking-grid','marking-moto-zone','marking-parking','refpoint','refline'].includes(objects[mi].type)
         ? (objects[mi].thickness || 3) : Math.round(objects[mi].h || 10);
       document.getElementById('ctx-thick-slider').value = cur;
       document.getElementById('ctx-thick-val').textContent = cur;
@@ -4906,7 +5026,7 @@ function ctxPaste() {
   const newIdxStart = objects.length;
   clipboard.forEach(obj => {
     const o = { ...obj, x: obj.x + off, y: obj.y + off, layerId: layers[activeIdx].id };
-    if (o.type === 'marking-turn') { o.cx += off; o.cy += off; }
+    if (o.type === 'marking-turn' || o.type === 'marking-chanl') { o.cx += off; o.cy += off; }
     if (o.type === 'refline')   { o.x1 += off; o.y1 += off; o.x2 += off; o.y2 += off; }
     if (o.type === 'reflabel')  { o.radius += off * 0.5; } // nudge orbit slightly
     objects.push(o);
@@ -5485,7 +5605,8 @@ function markingVariantToTypeColor(v) {
   if (v === 'arrow-turn')    return { type: 'marking-arrow-turn',    color: '#ffffff' };
   if (v === 'arrow-straight-turn') return { type: 'marking-arrow-straight-turn', color: '#ffffff' };
   if (v === 'arrow-three-way')    return { type: 'marking-arrow-three-way',    color: '#ffffff' };
-  if (v === 'hashbox')            return { type: 'marking-hashbox',           color: '#ffffff' };
+  if (v === 'sepisle')            return { type: 'marking-sepisle',           color: '#ffffff' };
+  if (v === 'chanl')              return { type: 'marking-chanl',             color: '#ffffff' };
   return { type: 'marking-dbl-solid', color: '#f9c400' }; // 'dbl-solid' + legacy
 }
 
@@ -6003,6 +6124,35 @@ function drawMarkingTurn(ctx, obj) {
   ctx.restore();
 }
 
+function drawMarkingChanl(ctx, obj) {
+  const { cx, cy, a1x, a1y, a2x, a2y, color, thickness } = obj;
+  const lw = thickness || 10;
+  const clr = color || '#ffffff';
+  const ex1 = cx + a1x, ey1 = cy + a1y;
+  const ex2 = cx + a2x, ey2 = cy + a2y;
+  const xs = [cx, ex1, ex2], ys = [cy, ey1, ey2];
+  const minX = Math.min(...xs) - lw, maxX = Math.max(...xs) + lw;
+  const minY = Math.min(...ys) - lw, maxY = Math.max(...ys) + lw;
+  // Clip to triangle and fill hatching
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(ex1, ey1); ctx.lineTo(ex2, ey2); ctx.closePath();
+  ctx.clip();
+  const sp = Math.max(lw * 2.2, 12);
+  ctx.strokeStyle = clr; ctx.lineWidth = lw * 0.55; ctx.lineCap = 'butt'; ctx.setLineDash([]);
+  for (let c = minX + minY; c <= maxX + maxY; c += sp) {
+    ctx.beginPath(); ctx.moveTo(c - maxY, maxY); ctx.lineTo(c - minY, minY); ctx.stroke();
+  }
+  ctx.restore();
+  // Draw the two boundary lines on top
+  ctx.save();
+  ctx.strokeStyle = clr; ctx.lineWidth = lw; ctx.lineCap = 'square'; ctx.lineJoin = 'miter'; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(ex1, ey1); ctx.lineTo(cx, cy); ctx.lineTo(ex2, ey2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawMarkingRect(ctx, obj) {
   ctx.save();
   ctx.fillStyle = obj.color || '#f9c400';
@@ -6091,7 +6241,34 @@ arrowThreeWayImg.onload     = () => _setArrowToolIcon('[data-v="arrow-three-way"
   cx.moveTo(x, y); cx.lineTo(ex, y);
   cx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
   cx.lineTo(x, y + h); cx.stroke();
-  const el = document.querySelector('[data-v="hashbox"] .opt-icon-img');
+  const el = document.querySelector('[data-v="sepisle"] .opt-icon-img');
+  if (el) el.src = c.toDataURL();
+})();
+(function _genChanlIcon() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 28;
+  const cx = c.getContext('2d');
+  // Wedge: apex at left, two arms going right at ±15°
+  const tan15 = Math.tan(Math.PI / 12);
+  const apx = 3, apy = 14; // apex position in icon
+  const len = 20;
+  const ex1 = apx + len, ey1 = apy - tan15 * len;
+  const ex2 = apx + len, ey2 = apy + tan15 * len;
+  const minX = apx - 1, maxX = ex1 + 1, minY = ey1 - 1, maxY = ey2 + 1;
+  const sp = (maxY - minY) * 0.55;
+  cx.save();
+  cx.beginPath();
+  cx.moveTo(apx, apy); cx.lineTo(ex1, ey1); cx.lineTo(ex2, ey2); cx.closePath();
+  cx.fillStyle = '#e8e8e8'; cx.fill();
+  cx.clip();
+  cx.strokeStyle = '#333'; cx.lineWidth = 1.2; cx.lineCap = 'butt';
+  for (let cv = minX + minY; cv <= maxX + maxY; cv += sp) {
+    cx.beginPath(); cx.moveTo(cv - maxY, maxY); cx.lineTo(cv - minY, minY); cx.stroke();
+  }
+  cx.restore();
+  cx.strokeStyle = '#333'; cx.lineWidth = 1.5; cx.lineCap = 'square';
+  cx.beginPath(); cx.moveTo(ex1, ey1); cx.lineTo(apx, apy); cx.lineTo(ex2, ey2); cx.stroke();
+  const el = document.querySelector('[data-v="chanl"] .opt-icon-img');
   if (el) el.src = c.toDataURL();
 })();
 
