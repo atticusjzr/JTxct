@@ -856,11 +856,16 @@ function hitHandle(pt, obj) {
     return null;
   }
   const corners = getCorners(obj);
+  const lockedCI = (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) ? _getLockedBboxCorners(obj) : new Set();
   for (let i = 0; i < 4; i++) {
+    if (lockedCI.has(i)) continue;
     if (dist2(pt, corners[i]) <= hr*hr) return { type: 'corner', idx: i };
   }
   const mids = getMidpoints(obj);
   for (let i = 0; i < 4; i++) {
+    // edge i is adjacent to corners i and (i+1)%4; block if corner (i+3)%4 or i is locked
+    // (corner ci's adjacent edges are ci and (ci+3)%4, so edge i is blocked if lockedCI has i or (i+3)%4)
+    if (lockedCI.has(i) || lockedCI.has((i + 3) % 4)) continue;
     if (dist2(pt, mids[i]) <= hr*hr) return { type: 'edge', idx: i };
   }
   const rh = getRotHandle(obj);
@@ -948,22 +953,30 @@ function drawSelHandles(ctx, obj) {
   }
 
   {
+    const lockedCI = (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) ? _getLockedBboxCorners(obj) : new Set();
     // Corner handles
-    corners.forEach(c => {
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#42a5f5';
+    corners.forEach((c, i) => {
+      const locked = lockedCI.has(i);
+      ctx.fillStyle = locked ? '#ffcdd2' : '#fff';
+      ctx.strokeStyle = locked ? '#e53935' : '#42a5f5';
       ctx.lineWidth = lw;
       ctx.beginPath();
       ctx.arc(c.x, c.y, hr, 0, Math.PI*2);
       ctx.fill(); ctx.stroke();
+      if (locked) {
+        // small lock mark: vertical bar
+        ctx.strokeStyle = '#e53935'; ctx.lineWidth = lw * 1.5;
+        ctx.beginPath(); ctx.moveTo(c.x, c.y - hr*0.5); ctx.lineTo(c.x, c.y + hr*0.5); ctx.stroke();
+      }
     });
 
     // Edge midpoint handles (方形)
     const mids = getMidpoints(obj);
     const hs = 4 / zoom;
-    mids.forEach(m => {
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#42a5f5';
+    mids.forEach((m, i) => {
+      const edgeLocked = lockedCI.has(i) || lockedCI.has((i + 3) % 4);
+      ctx.fillStyle = edgeLocked ? '#ffcdd2' : '#fff';
+      ctx.strokeStyle = edgeLocked ? '#e53935' : '#42a5f5';
       ctx.lineWidth = lw;
       ctx.beginPath();
       ctx.rect(m.x - hs, m.y - hs, hs * 2, hs * 2);
@@ -1620,6 +1633,17 @@ function getMotoWheelBottoms(obj) {
     x: cx + lx * cos - ly * sin,
     y: cy + lx * sin + ly * cos,
   }));
+}
+
+// Returns Set of bbox corner indices that are locked (by locked position-marks)
+function _getLockedBboxCorners(car) {
+  const s = new Set();
+  for (const o of objects) {
+    if (o.type === 'position-mark' && o.carId === car.id && o.constraintLocked && typeof o.cornerIdx === 'number') {
+      s.add(o.cornerIdx);
+    }
+  }
+  return s;
 }
 
 // Returns locked position-mark corner info for a given car:
