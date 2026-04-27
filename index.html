@@ -1248,6 +1248,7 @@ let _seoFocusedKey = null;
 let _measureDrag = null;   // { objIdx, startMx, startMy, startT, startD }
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
+let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
 
 // ── DOM ──────────────────────────────────────────────────
 const dc        = document.getElementById('display-canvas');
@@ -1335,6 +1336,20 @@ function composite() {
     _posReflineLabel(objects[selectedObjs[0]]);
   }
   updateRefpointBtn();
+  // Draw smart guide lines
+  if (_guideLines.length) {
+    dCtx.save();
+    dCtx.strokeStyle = '#ff4fa0';
+    dCtx.lineWidth = 1 / zoom;
+    dCtx.setLineDash([]);
+    _guideLines.forEach(g => {
+      dCtx.beginPath();
+      if (g.axis === 'x') { dCtx.moveTo(g.val, -CANVAS_MARGIN); dCtx.lineTo(g.val, H + CANVAS_MARGIN); }
+      else                { dCtx.moveTo(-CANVAS_MARGIN, g.val); dCtx.lineTo(W + CANVAS_MARGIN, g.val); }
+      dCtx.stroke();
+    });
+    dCtx.restore();
+  }
   dCtx.restore();
 }
 
@@ -2702,6 +2717,103 @@ function hitGroupCorner(pt) {
 }
 
 // ── 多選群組外框（含角點把手）────────────────────────────
+// ── Smart guide lines ────────────────────────────────────
+function _getObjAABB(obj) {
+  // refline, turn, chanl: x/y/w/h is already an AABB
+  if (obj.type === 'refline' || obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
+    if (!obj.w || !obj.h) return null;
+    return { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
+  }
+  if (!obj.w || !obj.h) return null;
+  const corners = getCorners(obj);
+  const xs = corners.map(c => c.x), ys = corners.map(c => c.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function _computeGuides() {
+  _guideLines = [];
+  const THR = 8 / zoom;
+  const selSet = new Set(selectedObjs);
+
+  // Moving bbox
+  let mBox;
+  if (selectedObjs.length === 1) {
+    mBox = _getObjAABB(objects[selectedObjs[0]]);
+  } else {
+    mBox = getGroupBBox();
+  }
+  if (!mBox) return;
+
+  const mCandX = [mBox.x, mBox.x + mBox.w / 2, mBox.x + mBox.w];
+  const mCandY = [mBox.y, mBox.y + mBox.h / 2, mBox.y + mBox.h];
+
+  // Collect candidate edges from non-selected objects
+  const candX = [], candY = [];
+  objects.forEach((obj, i) => {
+    if (selSet.has(i)) return;
+    const bb = _getObjAABB(obj);
+    if (!bb) return;
+    candX.push(bb.x, bb.x + bb.w / 2, bb.x + bb.w);
+    candY.push(bb.y, bb.y + bb.h / 2, bb.y + bb.h);
+  });
+
+  // Find snaps
+  const xSnaps = [], ySnaps = [];
+  mCandX.forEach(mx => {
+    candX.forEach(cx => {
+      if (Math.abs(mx - cx) < THR) xSnaps.push(cx);
+    });
+  });
+  mCandY.forEach(my => {
+    candY.forEach(cy => {
+      if (Math.abs(my - cy) < THR) ySnaps.push(cy);
+    });
+  });
+
+  // Deduplicate and store guides
+  [...new Set(xSnaps)].forEach(v => _guideLines.push({ axis: 'x', val: v }));
+  [...new Set(ySnaps)].forEach(v => _guideLines.push({ axis: 'y', val: v }));
+
+  // Apply snap offsets (closest match per axis)
+  if (xSnaps.length) {
+    // Find closest x snap
+    let bestDx = Infinity, bestX = 0;
+    mCandX.forEach(mx => {
+      candX.forEach(cx => {
+        const d = cx - mx;
+        if (Math.abs(d) < Math.abs(bestDx)) { bestDx = d; bestX = cx; }
+      });
+    });
+    if (Math.abs(bestDx) < THR) {
+      selectedObjs.forEach(i => {
+        const o = objects[i];
+        if (!o) return;
+        o.x += bestDx;
+        if (o.type === 'marking-turn' || o.type === 'marking-chanl') o.cx += bestDx;
+      });
+    }
+  }
+  if (ySnaps.length) {
+    let bestDy = Infinity;
+    mCandY.forEach(my => {
+      candY.forEach(cy => {
+        const d = cy - my;
+        if (Math.abs(d) < Math.abs(bestDy)) bestDy = d;
+      });
+    });
+    if (Math.abs(bestDy) < THR) {
+      selectedObjs.forEach(i => {
+        const o = objects[i];
+        if (!o) return;
+        o.y += bestDy;
+        if (o.type === 'marking-turn' || o.type === 'marking-chanl') o.cy += bestDy;
+      });
+    }
+  }
+}
+
 function drawGroupOutline(ctx) {
   const lw = 1.5 / zoom;
   const hr = 5  / zoom;
@@ -4174,6 +4286,7 @@ function onMove(e) {
         computeReflineP1(rl);
         syncReflineBBox(rl);
       }
+      _computeGuides();
     } else if (selectState === 'turn-rot') {
       const obj  = objects[selectedObjs[0]];
       const orig = selectObjOrig[0];
@@ -4490,6 +4603,7 @@ function onUp(e) {
     }
     const _endState = selectState;
     drawing = false; selectState = 'idle';
+    _guideLines = [];
     linkedReflineOrig = null;
     rotLabel.classList.remove('rotating'); // restore interactivity after drag
     if (rotLabelObjIdx >= 0 && !selectedObjs.includes(rotLabelObjIdx)) {
