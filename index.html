@@ -2867,9 +2867,14 @@ function updatePropsPanel() {
   }
 
   // Thickness
-  const HAS_THICK = new Set(['refpoint','refline','marking-turn','marking-chanl','marking-grid','marking-moto-zone','marking-parking']);
+  const HAS_THICK = new Set(['refpoint','refline','marking-turn','marking-chanl','marking-grid','marking-moto-zone','marking-parking','marking-sepisle']);
   if (HAS_THICK.has(t)) {
-    rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="1" max="60" step="1" value="${obj.thickness || 3}" oninput="this.nextElementSibling.value=this.value;propSetThicknessLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-thickness" min="1" max="60" step="1" value="${obj.thickness || 3}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetThicknessLive(this.value)" onchange="propSetThickness(this.value)"><span class="prop-val">px</span></div>`);
+    if (t === 'marking-sepisle') {
+      const thDef = +(obj.thickness || Math.max(1.5, (obj.h || 20) * 0.04)).toFixed(1);
+      rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="0.5" max="20" step="0.5" value="${thDef}" oninput="this.nextElementSibling.value=this.value;propSetThicknessLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-thickness" min="0.5" max="20" step="0.5" value="${thDef}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetThicknessLive(this.value)" onchange="propSetThickness(this.value)"><span class="prop-val">px</span></div>`);
+    } else {
+      rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="1" max="60" step="1" value="${obj.thickness || 3}" oninput="this.nextElementSibling.value=this.value;propSetThicknessLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-thickness" min="1" max="60" step="1" value="${obj.thickness || 3}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetThicknessLive(this.value)" onchange="propSetThickness(this.value)"><span class="prop-val">px</span></div>`);
+    }
   }
   if (t === 'position-mark') {
     const th = obj.thickness || 1.5;
@@ -6501,7 +6506,7 @@ function drawMarkingHashbox(ctx, obj) {
   const bodyW = Math.max(r + 1, w - r);
   const ex    = x + bodyW;
   const ey    = y + r;
-  const lw    = Math.max(1.5, h * 0.04);
+  const lw    = obj.thickness || Math.max(1.5, h * 0.04);
   const sp    = obj.hatchSpacing ?? Math.max(h * 0.55, 12);
   const clr   = color || '#ffffff';
   _drawHatch(ctx, () => {
