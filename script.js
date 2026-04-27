@@ -2322,9 +2322,9 @@ function updatePropsPanel() {
     const lnb = !!obj.labelNoBg;
     const lbg = obj.labelBgColor || '#ffffff';
     const ltd = obj.labelD != null ? Math.round(obj.labelD) : '';
-    const ltt = obj.labelT != null ? +obj.labelT.toFixed(2) : '';
+    const ltmd = obj.labelMaxD ?? 60;
     rows.push(`<div class="prop-row"><label>數字垂距</label><input type="number" id="pr-dlperp" value="${ltd}" placeholder="自動" onchange="propDimlineLabelD(this.value)"><span class="prop-val">px</span></div>`);
-    rows.push(`<div class="prop-row"><label>數字位置</label><input type="number" id="pr-dlt" min="0" max="1" step="0.01" value="${ltt}" placeholder="0.5" onchange="propDimlineLabelT(this.value)"><span class="prop-val">0–1</span></div>`);
+    rows.push(`<div class="prop-row"><label>數字最大垂距</label><input type="number" id="pr-dlmaxd" min="10" max="300" value="${ltmd}" onchange="propDimlineLabelMaxD(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>數字顏色</label><input type="color" id="pr-dlcolor" value="${lc}" oninput="propDimlineLabelColor(this.value)" onchange="saveSnap('數字顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>數字大小</label><input type="number" id="pr-dlsize" min="8" max="48" value="${ls}" placeholder="自動" onchange="propDimlineLabelSize(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>數字底色</label><input type="checkbox" ${lnb?'checked':''} onchange="propDimlineLabelNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-dlbgcolor" value="${lbg}" ${lnb?'disabled':''} oninput="propDimlineLabelBgColor(this.value)" onchange="saveSnap('數字底色')"></div>`);
@@ -2587,8 +2587,8 @@ function propSMMeasureNoBg(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!
 function propSMMeasureBgColor(v){ const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.bgColor=v;}); composite();markDirty(); }
 function propDimlineColor(v)    { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.color=v;}); composite();markDirty(); }
 function propDimlineThickness(v){ const o=_propObj(); if(o?.type!=='dimline')return; const th=Math.max(0.5,parseFloat(v)||1.5); _applyDimlineSync(o,d=>{d.thickness=th;}); composite();markDirty(); }
-function propDimlineLabelD(v)    { const o=_propObj(); if(o?.type!=='dimline')return; const n=parseFloat(v); _applyDimlineSync(o,d=>{d.labelD=isNaN(n)?null:n;}); composite();markDirty();saveSnap('數字垂距'); }
-function propDimlineLabelT(v)    { const o=_propObj(); if(o?.type!=='dimline')return; const n=parseFloat(v); _applyDimlineSync(o,d=>{d.labelT=isNaN(n)?null:Math.max(0,Math.min(1,n));}); composite();markDirty();saveSnap('數字位置'); }
+function propDimlineLabelD(v)    { const o=_propObj(); if(o?.type!=='dimline')return; const n=parseFloat(v); _applyDimlineSync(o,d=>{const mx=d.labelMaxD??60; d.labelD=isNaN(n)?null:Math.max(-mx,Math.min(mx,n));}); composite();markDirty();saveSnap('數字垂距'); }
+function propDimlineLabelMaxD(v) { const o=_propObj(); if(o?.type!=='dimline')return; const nm=Math.max(10,parseFloat(v)||60); _applyDimlineSync(o,d=>{d.labelMaxD=nm; if(d.labelD!=null)d.labelD=Math.max(-nm,Math.min(nm,d.labelD));}); composite();markDirty();saveSnap('數字最大垂距'); }
 function propDimlineLabelColor(v) { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.labelColor=v;}); composite();markDirty(); }
 function propDimlineLabelSize(v)  { const o=_propObj(); if(o?.type!=='dimline')return; const s=Math.max(8,Math.min(48,parseFloat(v)||0)); _applyDimlineSync(o,d=>{d.labelSize=s||null;}); composite();markDirty();saveSnap('數字大小'); }
 function propDimlineLabelNoBg(v)  { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.labelNoBg=v;}); composite();markDirty();updatePropsPanel(); }
@@ -3548,6 +3548,8 @@ function onMove(e) {
     let newT = dld.startT + (dmx*ux + dmy*uy) / len;
     let newD = dld.startD + (dmx*ppx + dmy*ppy);
     newT = Math.max(0, Math.min(1, newT));
+    const maxD = obj.labelMaxD ?? 60;
+    newD = Math.max(-maxD, Math.min(maxD, newD));
     obj.labelT = newT;
     obj.labelD = newD;
     composite(); return;
