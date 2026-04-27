@@ -13,12 +13,12 @@
   <span id="app-title">多圖層繪圖</span>
   <div class="sep"></div>
   <button class="btn primary" onclick="cmdNew()">新建專案</button>
-  <button class="btn"         onclick="cmdSave()">儲存專案</button>
-  <button class="btn"         onclick="cmdOpen()">開啟專案</button>
-  <button class="btn danger"  onclick="cmdDelete()">刪除專案</button>
+  <button class="btn"         onclick="cmdSave()"   title="儲存到瀏覽器本機暫存&#10;⚠ 清除瀏覽器快取或換裝置會消失">儲存專案</button>
+  <button class="btn"         onclick="cmdOpen()"   title="從瀏覽器本機暫存開啟">開啟專案</button>
+  <button class="btn danger"  onclick="cmdDelete()" title="從瀏覽器本機暫存刪除">刪除專案</button>
   <div class="sep"></div>
-  <button class="btn" onclick="cmdExport()">匯出專案</button>
-  <button class="btn" onclick="cmdImport()">匯入專案</button>
+  <button class="btn" onclick="cmdExport()" title="下載為 .json 檔案到電腦&#10;✓ 建議正式備份或分享時使用">匯出檔案</button>
+  <button class="btn" onclick="cmdImport()" title="從電腦載入 .json 檔案">匯入檔案</button>
   <div class="sep"></div>
   <button class="btn" onclick="cmdInsertImage()">插入圖片</button>
   <button class="btn" onclick="cmdExportImage()">匯出圖檔</button>
