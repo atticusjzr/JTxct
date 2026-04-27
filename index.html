@@ -534,7 +534,7 @@ body {
 .tp-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 #props-panel { border-top: 1px solid var(--border); padding: 8px 0; flex-shrink: 0; }
 #props-hdr { padding: 4px 10px 6px; font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; }
-#props-body { padding: 0 8px 4px; display:flex; flex-direction:column; gap:5px; max-height: 260px; overflow-y: auto; }
+#props-body { padding: 0 8px 4px; display:flex; flex-direction:column; gap:5px; max-height: 520px; overflow-y: auto; }
 .props-empty { font-size: 12px; color: var(--text2); padding: 4px 2px; }
 .prop-type { font-size: 11px; color: var(--accent); font-weight:600; padding: 0 2px 2px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
 .prop-row { display: flex; align-items: center; gap: 6px; min-height: 26px; }
@@ -7454,7 +7454,10 @@ function _applyConstraint(obj, val) {
     const ep = _posMarkEndpoints(obj);
     if (!car || !ep || car.constraintLocked) return;
     const otherLocked = objects.filter(o => o !== obj && o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
-    if (otherLocked.length > 0) {
+    if (otherLocked.length === 1) {
+      // Exactly one locked PM: solve for rotation + car position
+      _applyPMWithOneLocked(obj, targetPx, car, otherLocked[0]); return;
+    } else if (otherLocked.length > 1) {
       _showLockBlockedModal(otherLocked); return;
     }
     const { c, f } = ep;
@@ -7487,18 +7490,90 @@ function _applyConstraint(obj, val) {
     const car = objects.find(o => o.id === obj.carId);
     if (!car || car.constraintLocked) return;
     const otherLocked = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
-    if (otherLocked.length > 0) {
-      _showLockBlockedModal(otherLocked); return;
-    }
+    if (otherLocked.length > 1) { _showLockBlockedModal(otherLocked); return; }
+
+    // Capture locked corner world pos + local pos BEFORE changing dimensions
+    const lci = otherLocked.length === 1 ? _getLockedCornerInfo(car) : [];
+    const lc = lci[0] ?? null;
+    const orig_w = car.w, orig_h = car.h;
+
     const cx = car.x + car.w/2, cy = car.y + car.h/2;
-    if (obj.axis === 'length') {
-      car.w = targetPx;
-      car.x = cx - car.w/2;
-    } else {
-      car.h = targetPx;
-      car.y = cy - car.h/2;
+    if (obj.axis === 'length') { car.w = targetPx; car.x = cx - car.w/2; }
+    else                       { car.h = targetPx; car.y = cy - car.h/2; }
+
+    // Re-anchor car so locked PM corner stays at its world position
+    if (lc) {
+      const lxS = lc.localX * car.w / orig_w;
+      const lyS = lc.localY * car.h / orig_h;
+      const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+      car.x = lc.worldX - (lxS*cosR - lyS*sinR) - car.w/2;
+      car.y = lc.worldY - (lxS*sinR + lyS*cosR) - car.h/2;
     }
   }
+}
+
+// When editing PM1 while PM0 is locked: solve for car rotation that satisfies both distance constraints.
+// Keeps car.w and car.h fixed; changes car.rotation and car.x/car.y.
+// Requires both PMs to reference the same refline.
+function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
+  const rl = objects.find(o => o.type === 'refline' && o.id === obj.reflineId);
+  const rl0 = objects.find(o => o.type === 'refline' && o.id === lockedPM.reflineId);
+  if (!rl || !rl0 || rl.id !== rl0.id) { _showLockBlockedModal([lockedPM]); return; }
+
+  computeReflineP1(rl);
+  const rl_dx = rl.x2 - rl.x1, rl_dy = rl.y2 - rl.y1;
+  const rl_len = Math.sqrt(rl_dx*rl_dx + rl_dy*rl_dy);
+  if (rl_len < 1) return;
+  const nx = -rl_dy / rl_len, ny = rl_dx / rl_len; // unit normal
+
+  const cx = car.x + car.w/2, cy = car.y + car.h/2;
+  const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+
+  // Locked corner (C0) and edited corner (C1) world + local positions
+  let anch0, anch1;
+  if (MOTO_TYPES.has(car.type)) { anch0 = anch1 = getMotoWheelBottoms(car); }
+  else {
+    anch0 = lockedPM.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car);
+    anch1 = obj.mode === 'wheel'      ? getCarWheelCorners(car) : getCarBodyCorners(car);
+  }
+  const c0 = anch0[lockedPM.cornerIdx], c1 = anch1[obj.cornerIdx];
+  if (!c0 || !c1) { _showLockBlockedModal([lockedPM]); return; }
+
+  // Local positions (car frame, unrotated)
+  const lx0 = (c0.x-cx)*cosR + (c0.y-cy)*sinR,  ly0 = -(c0.x-cx)*sinR + (c0.y-cy)*cosR;
+  const lx1 = (c1.x-cx)*cosR + (c1.y-cy)*sinR,  ly1 = -(c1.x-cx)*sinR + (c1.y-cy)*cosR;
+
+  // Signed perpendicular distances
+  const d0 = (c0.x-rl.x1)*nx + (c0.y-rl.y1)*ny;
+  const d1_cur = (c1.x-rl.x1)*nx + (c1.y-rl.y1)*ny;
+  const d1_target = targetPx * Math.sign(d1_cur || 1);
+
+  // Constraint: (lx1-lx0)*u + (ly1-ly0)*v = d1_target - d0  with u²+v²=1
+  const dlx = lx1-lx0, dly = ly1-ly0;
+  const dl_mag = Math.sqrt(dlx*dlx + dly*dly);
+  if (dl_mag < 0.1) { _showLockBlockedModal([lockedPM]); return; }
+
+  const rhs = d1_target - d0;
+  if (Math.abs(rhs) > dl_mag * 1.001) return; // geometrically impossible
+
+  // Solve for (u,v) on unit circle satisfying the linear constraint
+  const a = dlx/dl_mag, b = dly/dl_mag;
+  const proj = Math.max(-1, Math.min(1, rhs/dl_mag));
+  const perp = Math.sqrt(Math.max(0, 1 - proj*proj));
+
+  const u_cur = cosR*nx + sinR*ny, v_cur = -sinR*nx + cosR*ny;
+  const u1 = proj*a - perp*b, v1 = proj*b + perp*a;
+  const u2 = proj*a + perp*b, v2 = proj*b - perp*a;
+  const usePick1 = (u1-u_cur)**2+(v1-v_cur)**2 <= (u2-u_cur)**2+(v2-v_cur)**2;
+  const u_new = usePick1 ? u1 : u2, v_new = usePick1 ? v1 : v2;
+
+  // Recover rotation from (u,v): [cosR,sinR] = [[nx,-ny],[ny,nx]]*[u,v]
+  const cosR_new = nx*u_new - ny*v_new, sinR_new = ny*u_new + nx*v_new;
+  car.rotation = Math.atan2(sinR_new, cosR_new);
+
+  // Reposition car so C0 stays at its current world position
+  car.x = c0.x - (lx0*cosR_new - ly0*sinR_new) - car.w/2;
+  car.y = c0.y - (lx0*sinR_new + ly0*cosR_new) - car.h/2;
 }
 
 function _showLockBlockedModal(lockedPMs) {
