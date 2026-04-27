@@ -1510,7 +1510,7 @@ const OBJ_TYPE_NAMES = {
   'marking-turn':'轉彎處', 'marking-grid':'網狀線',
   'marking-moto-zone':'機車停等區', 'marking-parking':'停車格',
   'marking-rect':'實色矩形', 'marking-text':'標字',
-  'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-hashbox':'導流線',
+  'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-hashbox':'槽化線',
   'freetext': '文字',
 };
 
@@ -2906,7 +2906,7 @@ function onMove(e) {
         if (selectCorner === 0 || selectCorner === 2) {
           resizeMarkingThickness(obj, selectCorner === 0, pt.x, pt.y);
         } else {
-          resizeMarkingLength(obj, false, pt.x, pt.y); // 永远固定半圆端(右端)
+          resizeMarkingLength(obj, selectCorner === 1, pt.x, pt.y); // 右端(半圆)→固定开放端; 左端→固定半圆端
         }
       } else if (_boxMarking.has(obj.type)) {
         resizeEdge(obj, selectCorner, pt.x, pt.y);
@@ -4975,15 +4975,17 @@ function drawMarkingArrowThreeWay(ctx, obj) {
 }
 function drawMarkingHashbox(ctx, obj) {
   const { x, y, w, h, color } = obj;
-  const r  = h / 2;
-  const ex = x + w, ey = y + r;          // 半圆圆心
-  const lw = Math.max(1.5, h * 0.04);    // 线宽
-  const sp = Math.max(h * 0.55, 12);     // 斜线间距（和 h 成比例）
-  const clr = color || '#ffffff';
+  const r     = h / 2;
+  const bodyW = Math.max(r + 1, w - r); // 矩形部分宽（w 含半圆）
+  const ex    = x + bodyW;              // 半圆圆心 x
+  const ey    = y + r;                  // 半圆圆心 y
+  const lw    = Math.max(1.5, h * 0.04);
+  const sp    = Math.max(h * 0.55, 12);
+  const clr   = color || '#ffffff';
 
   ctx.save();
 
-  // clip 到标线范围（矩形 + 半圆）
+  // clip 到标线范围（矩形 + 半圆，bbox 恰好是 x,y,w,h）
   ctx.beginPath();
   ctx.moveTo(x, y);
   ctx.lineTo(ex, y);
@@ -4995,7 +4997,7 @@ function drawMarkingHashbox(ctx, obj) {
   // 45 度斜线填充
   ctx.strokeStyle = clr;
   ctx.lineWidth   = lw;
-  for (let off = -h; off < w + h; off += sp) {
+  for (let off = -h; off < bodyW + h; off += sp) {
     ctx.beginPath();
     ctx.moveTo(x + off,     y + h);
     ctx.lineTo(x + off + h, y);
