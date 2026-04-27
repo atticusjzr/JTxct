@@ -257,6 +257,21 @@
            onchange="saveSnap('調整停車格數量')">
     <span id="ctx-count-val">3</span>
   </div>
+  <div class="ctx-sep" id="ctx-hatch-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-hatch-ang-item" style="display:none" onclick="event.stopPropagation()">
+    <span>斜線角度</span>
+    <input type="range" id="ctx-hatch-ang-slider" min="1" max="89" value="45"
+           oninput="setHatchAngleLive(this.value)"
+           onchange="saveSnap('調整斜線角度')">
+    <span id="ctx-hatch-ang-val">45</span><span style="font-size:10px">°</span>
+  </div>
+  <div class="ctx-item ctx-thick-row" id="ctx-hatch-sp-item" style="display:none" onclick="event.stopPropagation()">
+    <span>斜線間距</span>
+    <input type="range" id="ctx-hatch-sp-slider" min="4" max="80" value="15"
+           oninput="setHatchSpacingLive(this.value)"
+           onchange="saveSnap('調整斜線間距')">
+    <span id="ctx-hatch-sp-val">15</span><span style="font-size:10px">px</span>
+  </div>
   <div class="ctx-sep" id="ctx-posmark-sep" style="display:none"></div>
   <div class="ctx-item ctx-has-sub" id="ctx-posmark-item" style="display:none">
     <span>標記定位</span><span>▶</span>

@@ -927,37 +927,51 @@ function ptOnMarkingChanl(pt, obj) {
       || ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a2x, obj.cy+obj.a2y, r);
 }
 function getChanlHandles(obj) {
+  const a1L = Math.sqrt(obj.a1x**2+obj.a1y**2), a2L = Math.sqrt(obj.a2x**2+obj.a2y**2);
+  const a1nx = a1L>0.01?obj.a1x/a1L:1, a1ny = a1L>0.01?obj.a1y/a1L:0;
+  const a2nx = a2L>0.01?obj.a2x/a2L:1, a2ny = a2L>0.01?obj.a2y/a2L:0;
+  const bx = a1nx+a2nx, by = a1ny+a2ny, bLen = Math.sqrt(bx*bx+by*by);
+  const bnx = bLen>0.01?bx/bLen:a1nx, bny = bLen>0.01?by/bLen:a1ny;
+  const openX = obj.cx+(obj.a1x+obj.a2x)/2, openY = obj.cy+(obj.a1y+obj.a2y)/2;
+  const a1Mid = { x: obj.cx+obj.a1x/2, y: obj.cy+obj.a1y/2 };
   return {
-    a1End:  { x: obj.cx + obj.a1x,   y: obj.cy + obj.a1y },
-    a1Mid:  { x: obj.cx + obj.a1x/2, y: obj.cy + obj.a1y/2 },
-    corner: { x: obj.cx,             y: obj.cy },
-    a2Mid:  { x: obj.cx + obj.a2x/2, y: obj.cy + obj.a2y/2 },
-    a2End:  { x: obj.cx + obj.a2x,   y: obj.cy + obj.a2y },
+    a1End:    { x: obj.cx+obj.a1x,   y: obj.cy+obj.a1y },
+    a1Mid,
+    corner:   { x: obj.cx,           y: obj.cy },
+    a2Mid:    { x: obj.cx+obj.a2x/2, y: obj.cy+obj.a2y/2 },
+    a2End:    { x: obj.cx+obj.a2x,   y: obj.cy+obj.a2y },
+    chanlRot: { x: openX+bnx*28,     y: openY+bny*28 },
+    _openX: openX, _openY: openY,
   };
 }
 function hitChanlHandle(pt, obj) {
   const hr = 9 / zoom;
   const h = getChanlHandles(obj);
-  if (dist2(pt, h.a1End)  <= hr*hr) return { type: 'chanl-a1e' };
-  if (dist2(pt, h.a2End)  <= hr*hr) return { type: 'chanl-a2e' };
-  if (dist2(pt, h.a1Mid)  <= hr*hr) return { type: 'chanl-a1m' };
-  if (dist2(pt, h.a2Mid)  <= hr*hr) return { type: 'chanl-a2m' };
-  if (dist2(pt, h.corner) <= hr*hr) return { type: 'chanl-cor' };
+  if (dist2(pt, h.chanlRot) <= hr*hr) return { type: 'chanl-rot' };
+  if (dist2(pt, h.a1End)    <= hr*hr) return { type: 'chanl-a1e' };
+  if (dist2(pt, h.a2End)    <= hr*hr) return { type: 'chanl-a2e' };
+  if (dist2(pt, h.a1Mid)    <= hr*hr) return { type: 'chanl-a1m' };
+  if (dist2(pt, h.a2Mid)    <= hr*hr) return { type: 'chanl-a2m' };
+  if (dist2(pt, h.corner)   <= hr*hr) return { type: 'chanl-cor' };
   return null;
 }
 function drawChanlHandles(ctx, obj) {
   const h = getChanlHandles(obj);
   const hr = 5 / zoom, lw = 1.5 / zoom;
+  // Rotation stem
+  ctx.strokeStyle = '#43a047'; ctx.lineWidth = lw * 0.7; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(h._openX, h._openY); ctx.lineTo(h.chanlRot.x, h.chanlRot.y); ctx.stroke();
   function dot(p, fill, stroke) {
     ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = lw;
     ctx.beginPath(); ctx.arc(p.x, p.y, hr, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
   }
-  dot(h.a1End,  '#fff', '#e53935');
-  dot(h.a2End,  '#fff', '#e53935');
-  dot(h.a1Mid,  '#fff', '#43a047');
-  dot(h.a2Mid,  '#fff', '#43a047');
-  dot(h.corner, '#1e88e5', '#fff');
+  dot(h.a1End,    '#fff', '#e53935');
+  dot(h.a2End,    '#fff', '#e53935');
+  dot(h.a1Mid,    '#fff', '#43a047');
+  dot(h.a2Mid,    '#fff', '#43a047');
+  dot(h.corner,   '#1e88e5', '#fff');
+  dot(h.chanlRot, '#fff', '#43a047');
 }
 function applyChanlDrag(obj, orig, state, pt) {
   switch (state) {
@@ -1693,6 +1707,14 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>尺標顏色</label><input type="color" id="pr-pmcolor" value="${m.color||'#e53935'}" oninput="propPMeasureColor(this.value)" onchange="saveSnap('尺標顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>尺標大小</label><input type="number" id="pr-pmsize" min="8" max="48" value="${m.size||11}" onchange="propPMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>尺標底色</label><input type="checkbox" ${m.noBg?'checked':''} onchange="propPMeasureNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-pmbgcolor" value="${m.bgColor||'#ffffff'}" ${m.noBg?'disabled':''} oninput="propPMeasureBgColor(this.value)" onchange="saveSnap('尺標底色')"></div>`);
+  }
+
+  // Hatch controls for sepisle / chanl
+  if (t === 'marking-sepisle' || t === 'marking-chanl') {
+    const ang = obj.hatchAngle ?? 45;
+    const sp  = obj.hatchSpacing ?? (t === 'marking-chanl' ? Math.max((obj.thickness||10)*2.2,12) : Math.max((obj.h||20)*0.55,12));
+    rows.push(`<div class="prop-row"><label>斜線角度</label><input type="number" id="pr-hatch-ang" min="1" max="89" value="${ang}" oninput="setHatchAngleLive(this.value)" onchange="saveSnap('斜線角度')"><span class="prop-val">°</span></div>`);
+    rows.push(`<div class="prop-row"><label>斜線間距</label><input type="number" id="pr-hatch-sp" min="4" max="80" value="${Math.round(sp)}" oninput="setHatchSpacingLive(this.value)" onchange="saveSnap('斜線間距')"><span class="prop-val">px</span></div>`);
   }
 
   // marking-text content
@@ -2750,6 +2772,11 @@ function onDown(e) {
           }
         } else if (hit.type.startsWith('chanl-')) {
           selectState = hit.type;
+          if (hit.type === 'chanl-rot') {
+            turnRotCenter = { x: orig.cx, y: orig.cy };
+            rotPrevAngle  = Math.atan2(pt.y - orig.cy, pt.x - orig.cx);
+            objects[selectedObjs[0]].rotation = 0;
+          }
         } else {
           selectState = 'move';
         }
@@ -2977,6 +3004,20 @@ function onMove(e) {
         showTurnValueLabel(getTurnHandles(obj).corner,
           ((obj.radius || 0)).toFixed(1), 'px');
       }
+      composite(); return;
+    } else if (selectState === 'chanl-rot') {
+      const obj  = objects[selectedObjs[0]];
+      const orig = selectObjOrig[0];
+      const currAngle = Math.atan2(pt.y - turnRotCenter.y, pt.x - turnRotCenter.x);
+      let delta = currAngle - rotPrevAngle;
+      if (delta >  Math.PI) delta -= 2 * Math.PI;
+      if (delta < -Math.PI) delta += 2 * Math.PI;
+      obj.rotation = (obj.rotation || 0) + delta;
+      const c = Math.cos(obj.rotation), s = Math.sin(obj.rotation);
+      obj.a1x = orig.a1x*c - orig.a1y*s;  obj.a1y = orig.a1x*s + orig.a1y*c;
+      obj.a2x = orig.a2x*c - orig.a2y*s;  obj.a2y = orig.a2x*s + orig.a2y*c;
+      syncTurnBBox(obj);
+      rotPrevAngle = currAngle;
       composite(); return;
     } else if (selectState.startsWith('chanl-')) {
       const obj = objects[selectedObjs[0]];
@@ -3584,6 +3625,26 @@ function setCellSizeLive(v) {
   composite(); markDirty();
 }
 
+function setHatchAngleLive(v) {
+  const val = Math.round(Math.max(1, Math.min(89, +v)));
+  const el = document.getElementById('ctx-hatch-ang-val'); if (el) el.textContent = val;
+  const elP = document.getElementById('pr-hatch-ang'); if (elP) elP.value = val;
+  selectedObjs.forEach(i => {
+    if (objects[i] && (objects[i].type === 'marking-sepisle' || objects[i].type === 'marking-chanl'))
+      objects[i].hatchAngle = val;
+  });
+  composite(); markDirty();
+}
+function setHatchSpacingLive(v) {
+  const val = Math.round(Math.max(4, Math.min(80, +v)));
+  const el = document.getElementById('ctx-hatch-sp-val'); if (el) el.textContent = val;
+  const elP = document.getElementById('pr-hatch-sp'); if (elP) elP.value = val;
+  selectedObjs.forEach(i => {
+    if (objects[i] && (objects[i].type === 'marking-sepisle' || objects[i].type === 'marking-chanl'))
+      objects[i].hatchSpacing = val;
+  });
+  composite(); markDirty();
+}
 function setObjThicknessLive(v) {
   const val = Math.round(+v);
   document.getElementById('ctx-thick-val').textContent = val;
@@ -3679,6 +3740,23 @@ function showCtxMenu(e) {
   document.getElementById('ctx-cell-item').style.display  = hasGrid    ? '' : 'none';
   document.getElementById('ctx-count-sep').style.display  = hasParking ? '' : 'none';
   document.getElementById('ctx-count-item').style.display = hasParking ? '' : 'none';
+  const hasHatch = selectedObjs.some(i => objects[i] && (objects[i].type === 'marking-sepisle' || objects[i].type === 'marking-chanl'));
+  document.getElementById('ctx-hatch-sep').style.display      = hasHatch ? '' : 'none';
+  document.getElementById('ctx-hatch-ang-item').style.display = hasHatch ? '' : 'none';
+  document.getElementById('ctx-hatch-sp-item').style.display  = hasHatch ? '' : 'none';
+  if (hasHatch) {
+    const hi = selectedObjs.find(i => objects[i] && (objects[i].type === 'marking-sepisle' || objects[i].type === 'marking-chanl'));
+    if (hi !== undefined) {
+      const ho = objects[hi];
+      const ang = ho.hatchAngle ?? 45;
+      const spDef = ho.type === 'marking-chanl' ? Math.max((ho.thickness||10)*2.2,12) : Math.max((ho.h||20)*0.55,12);
+      const sp = ho.hatchSpacing ?? Math.round(spDef);
+      document.getElementById('ctx-hatch-ang-slider').value = ang;
+      document.getElementById('ctx-hatch-ang-val').textContent = ang;
+      document.getElementById('ctx-hatch-sp-slider').value = sp;
+      document.getElementById('ctx-hatch-sp-val').textContent = sp;
+    }
+  }
   if (hasThick) {
     const mi = selectedObjs.find(i => objects[i] && (objects[i].type.startsWith('marking-') || objects[i].type === 'refpoint' || objects[i].type === 'refline'));
     if (mi !== undefined) {
@@ -4970,6 +5048,27 @@ function drawMarkingTurn(ctx, obj) {
   ctx.restore();
 }
 
+function _drawHatch(ctx, buildClip, minX, minY, maxX, maxY, angle, spacing, lw, color) {
+  const rad = (angle ?? 45) * Math.PI / 180;
+  const cosA = Math.cos(rad), sinA = Math.sin(rad);
+  const nx = -sinA, ny = cosA;
+  const cs = [[minX,minY],[maxX,minY],[maxX,maxY],[minX,maxY]].map(([x,y]) => x*nx + y*ny);
+  const cMin = Math.min(...cs), cMax = Math.max(...cs);
+  const ext = Math.max(maxX-minX, maxY-minY) + spacing * 2;
+  ctx.save();
+  buildClip();
+  ctx.clip();
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'butt'; ctx.setLineDash([]);
+  ctx.beginPath();
+  for (let c = cMin - spacing; c <= cMax + spacing; c += spacing) {
+    const ox = c * nx, oy = c * ny;
+    ctx.moveTo(ox - ext*cosA, oy - ext*sinA);
+    ctx.lineTo(ox + ext*cosA, oy + ext*sinA);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawMarkingChanl(ctx, obj) {
   const { cx, cy, a1x, a1y, a2x, a2y, color, thickness } = obj;
   const lw = thickness || 10;
@@ -4979,18 +5078,12 @@ function drawMarkingChanl(ctx, obj) {
   const xs = [cx, ex1, ex2], ys = [cy, ey1, ey2];
   const minX = Math.min(...xs) - lw, maxX = Math.max(...xs) + lw;
   const minY = Math.min(...ys) - lw, maxY = Math.max(...ys) + lw;
-  // Clip to triangle and fill hatching
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(cx, cy); ctx.lineTo(ex1, ey1); ctx.lineTo(ex2, ey2); ctx.closePath();
-  ctx.clip();
-  const sp = Math.max(lw * 2.2, 12);
-  ctx.strokeStyle = clr; ctx.lineWidth = lw * 0.55; ctx.lineCap = 'butt'; ctx.setLineDash([]);
-  for (let c = minX + minY; c <= maxX + maxY; c += sp) {
-    ctx.beginPath(); ctx.moveTo(c - maxY, maxY); ctx.lineTo(c - minY, minY); ctx.stroke();
-  }
-  ctx.restore();
-  // Draw the two boundary lines on top
+  const sp = obj.hatchSpacing ?? Math.max(lw * 2.2, 12);
+  _drawHatch(ctx, () => {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy); ctx.lineTo(ex1, ey1); ctx.lineTo(ex2, ey2); ctx.closePath();
+  }, minX, minY, maxX, maxY, obj.hatchAngle ?? 45, sp, lw * 0.55, clr);
+  // boundary lines on top
   ctx.save();
   ctx.strokeStyle = clr; ctx.lineWidth = lw; ctx.lineCap = 'square'; ctx.lineJoin = 'miter'; ctx.setLineDash([]);
   ctx.beginPath();
@@ -5179,43 +5272,22 @@ function drawMarkingArrowThreeWay(ctx, obj) {
 function drawMarkingHashbox(ctx, obj) {
   const { x, y, w, h, color } = obj;
   const r     = h / 2;
-  const bodyW = Math.max(r + 1, w - r); // 矩形部分宽（w 含半圆）
-  const ex    = x + bodyW;              // 半圆圆心 x
-  const ey    = y + r;                  // 半圆圆心 y
+  const bodyW = Math.max(r + 1, w - r);
+  const ex    = x + bodyW;
+  const ey    = y + r;
   const lw    = Math.max(1.5, h * 0.04);
-  const sp    = Math.max(h * 0.55, 12);
+  const sp    = obj.hatchSpacing ?? Math.max(h * 0.55, 12);
   const clr   = color || '#ffffff';
-
-  ctx.save();
-
-  // clip 到标线范围（矩形 + 半圆，bbox 恰好是 x,y,w,h）
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(ex, y);
-  ctx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
-  ctx.lineTo(x, y + h);
-  ctx.closePath();
-  ctx.clip();
-
-  // 45 度斜线填充
-  ctx.strokeStyle = clr;
-  ctx.lineWidth   = lw;
-  for (let off = -h; off < bodyW + h; off += sp) {
+  _drawHatch(ctx, () => {
     ctx.beginPath();
-    ctx.moveTo(x + off,     y + h);
-    ctx.lineTo(x + off + h, y);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-
-  // 外框线：上边 + 半圆 + 下边（左端开放）
+    ctx.moveTo(x, y); ctx.lineTo(ex, y);
+    ctx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(x, y + h); ctx.closePath();
+  }, x, y, ex + r, y + h, obj.hatchAngle ?? 45, sp, lw, clr);
   ctx.save();
-  ctx.strokeStyle = clr;
-  ctx.lineWidth   = lw;
+  ctx.strokeStyle = clr; ctx.lineWidth = lw;
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(ex, y);
+  ctx.moveTo(x, y); ctx.lineTo(ex, y);
   ctx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
   ctx.lineTo(x, y + h);
   ctx.stroke();
