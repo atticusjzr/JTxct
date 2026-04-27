@@ -2445,10 +2445,25 @@ function propSetDash(v) {
 function propDimlineAutoAdapt(v) {
   const obj = _propObj();
   if (!obj || obj.type !== 'dimline') return;
-  if (!v) { const ep = getDimlineEndpoints(obj); obj.fixedLen = ep.length; }
+  if (!v) { const ep = obj._lastEp || getDimlineEndpoints(obj); obj.fixedLen = ep.length; }
   obj.autoAdapt = v;
   composite(); markDirty(); saveSnap('尺寸線自動偵測');
   updatePropsPanel();
+}
+function ctxToggleDimlineAdapt() {
+  if (selectedObjs.length !== 1) return;
+  const obj = objects[selectedObjs[0]];
+  if (!obj || obj.type !== 'dimline') return;
+  if (obj.autoAdapt !== false) {
+    const ep = obj._lastEp;
+    obj.fixedLen = ep ? ep.length : (obj.fixedLen || 0);
+    obj.autoAdapt = false;
+  } else {
+    obj.autoAdapt = true;
+  }
+  composite(); markDirty(); saveSnap('尺寸線自動偵測');
+  updatePropsPanel();
+  hideCtxMenu();
 }
 function propMeasureShow(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
 function propMeasureText(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.text=v;composite();markDirty();} }
@@ -4356,22 +4371,6 @@ function showCtxMenu(e) {
     if (tool !== 'select') setTool('select'); else composite();
   }
 
-  // Right-click on dimline: toggle autoAdapt (don't show context menu)
-  if (hitIdx >= 0 && objects[hitIdx]?.type === 'dimline') {
-    const obj = objects[hitIdx];
-    if (obj.autoAdapt !== false) {
-      const ep = getDimlineEndpoints(obj);
-      obj.fixedLen = ep.length;
-      obj.autoAdapt = false;
-    } else {
-      obj.autoAdapt = true;
-    }
-    markDirty(); saveSnap('尺寸線自動偵測');
-    composite();
-    e.preventDefault();
-    return;
-  }
-
   const hasObj = selectedObjs.length > 0;
   const hasCb  = clipboard !== null && clipboard.length > 0;
   const isReflabel = hasObj && selectedObjs.every(i => objects[i]?.type === 'reflabel');
@@ -4514,6 +4513,15 @@ function showCtxMenu(e) {
   document.getElementById('ctx-flip-sep').style.display = canFlip ? '' : 'none';
   document.getElementById('ctx-flip-h').style.display   = canFlip ? '' : 'none';
   document.getElementById('ctx-flip-v').style.display   = canFlip ? '' : 'none';
+
+  // Dimline auto-adapt toggle
+  const hasSingleDimline = selectedObjs.length === 1 && objects[selectedObjs[0]]?.type === 'dimline';
+  document.getElementById('ctx-dimline-sep').style.display   = hasSingleDimline ? '' : 'none';
+  document.getElementById('ctx-dimline-adapt').style.display = hasSingleDimline ? '' : 'none';
+  if (hasSingleDimline) {
+    const dl = objects[selectedObjs[0]];
+    document.getElementById('ctx-dimline-adapt-label').textContent = dl.autoAdapt !== false ? '關閉自動偵測' : '開啟自動偵測';
+  }
 
   // Z-order items: only for single selection, hide for reflabel
   const canZOrder = selectedObjs.length === 1 && objects[selectedObjs[0]] &&
