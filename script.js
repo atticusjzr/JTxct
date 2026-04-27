@@ -129,7 +129,7 @@ class Layer {
 }
 
 // Types that don't count as dimline obstacles
-const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline']);
+const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline','position-mark','size-mark','pos-seg-mark']);
 function _isObstacle(obj) { return !_NON_OBSTACLE.has(obj.type) && !obj.specialRole; }
 
 // ── Composite ────────────────────────────────────────────
