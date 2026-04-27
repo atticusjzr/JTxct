@@ -3493,7 +3493,7 @@ function onUp(e) {
       const fw = rw > 20 ? rw : 200, fh = rh > 20 ? rh : 80;
       const fx = rw > 20 ? rx : pt2.x - fw / 2, fy = rh > 20 ? ry : pt2.y - fh / 2;
       const obj = { type:'freetext', text:'', fontSize:14, fontFamily:'sans-serif',
-                    color:color||'#000000', bold:false, italic:false, underline:false,
+                    color:color||'#000000', bold:false, italic:false, underline:false, showBorder:false,
                     rotation:0, x:fx, y:fy, w:fw, h:fh, layerId:layers[activeIdx]?.id };
       objects.push(obj);
       const idx = objects.length - 1;
@@ -5276,7 +5276,6 @@ arrowThreeWayImg.onload     = () => _setArrowToolIcon('[data-v="arrow-three-way"
   const c = document.createElement('canvas');
   c.width = c.height = 28;
   const cx = c.getContext('2d');
-  cx.fillStyle = '#3a3a3a'; cx.fillRect(0, 0, 28, 28);
   const x=7, y=1, w=14, h=26;
   const bh = Math.min(h*0.50, w*0.85);
   cx.fillStyle = '#ffffff';
