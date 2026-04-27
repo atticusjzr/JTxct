@@ -863,9 +863,8 @@ function hitHandle(pt, obj) {
   }
   const mids = getMidpoints(obj);
   for (let i = 0; i < 4; i++) {
-    // edge i is adjacent to corners i and (i+1)%4; block if corner (i+3)%4 or i is locked
-    // (corner ci's adjacent edges are ci and (ci+3)%4, so edge i is blocked if lockedCI has i or (i+3)%4)
-    if (lockedCI.has(i) || lockedCI.has((i + 3) % 4)) continue;
+    // edge i connects corners i and (i+1)%4; blocked if either endpoint corner is locked
+    if (lockedCI.has(i) || lockedCI.has((i + 1) % 4)) continue;
     if (dist2(pt, mids[i]) <= hr*hr) return { type: 'edge', idx: i };
   }
   const rh = getRotHandle(obj);
@@ -974,7 +973,7 @@ function drawSelHandles(ctx, obj) {
     const mids = getMidpoints(obj);
     const hs = 4 / zoom;
     mids.forEach((m, i) => {
-      const edgeLocked = lockedCI.has(i) || lockedCI.has((i + 3) % 4);
+      const edgeLocked = lockedCI.has(i) || lockedCI.has((i + 1) % 4);
       ctx.fillStyle = edgeLocked ? '#ffcdd2' : '#fff';
       ctx.strokeStyle = edgeLocked ? '#e53935' : '#42a5f5';
       ctx.lineWidth = lw;
