@@ -2499,13 +2499,13 @@ function ctxToggleDimlineAdapt() {
 function propMeasureShow(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
 function propMeasureText(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.text=v;composite();markDirty();} }
 function propMeasurePerp(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){const maxD=o.measure.maxD||60;o.measure.d=Math.max(-maxD,Math.min(maxD,parseFloat(v)||20));composite();markDirty();saveSnap('尺標垂直距');} }
-function propMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.maxD=Math.max(10,parseFloat(v)||60);composite();markDirty();saveSnap('尺標最大垂距');} }
+function propMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){const newMax=Math.max(10,parseFloat(v)||60);o.measure.maxD=newMax;o.measure.d=Math.max(-newMax,Math.min(newMax,o.measure.d??20));composite();markDirty();saveSnap('尺標最大垂距');} }
 function propMeasureColor(v) { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.color=v;composite();markDirty();} }
 function propMeasureSize(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.size=Math.max(8,Math.min(48,parseFloat(v)||11));composite();markDirty();saveSnap('尺標大小');} }
 function propPMeasureShow(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
 function propPMeasureText(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){const n=parseFloat(v);o.measure.text=isNaN(n)?'':(+n.toFixed(3)).toString();composite();markDirty();} }
 function propPMeasurePerp(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){const maxD=o.measure.maxD||40;o.measure.d=Math.max(-maxD,Math.min(maxD,parseFloat(v)||15));composite();markDirty();saveSnap('尺標垂直距');} }
-function propPMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.maxD=Math.max(10,parseFloat(v)||40);composite();markDirty();saveSnap('尺標最大垂距');} }
+function propPMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){const newMax=Math.max(10,parseFloat(v)||40);o.measure.maxD=newMax;o.measure.d=Math.max(-newMax,Math.min(newMax,o.measure.d??15));composite();markDirty();saveSnap('尺標最大垂距');} }
 function propPMeasureColor(v) { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.color=v;composite();markDirty();} }
 function propPMeasureSize(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.size=Math.max(8,Math.min(48,parseFloat(v)||11));composite();markDirty();saveSnap('尺標大小');} }
 function propPMeasureNoBg(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.noBg=v;composite();markDirty();saveSnap('尺標底色');updatePropsPanel();} }
@@ -2537,7 +2537,7 @@ function propSetSMThickness(v) {
 function propSMMeasureShow(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
 function propSMMeasureText(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){const n=parseFloat(v);o.measure.text=isNaN(n)?'':(+n.toFixed(3)).toString();composite();markDirty();} }
 function propSMMeasurePerp(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){const maxD=o.measure.maxD||40;o.measure.d=Math.max(-maxD,Math.min(maxD,parseFloat(v)||15));composite();markDirty();saveSnap('尺標垂直距');} }
-function propSMMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.maxD=Math.max(10,parseFloat(v)||40);composite();markDirty();saveSnap('尺標最大垂距');} }
+function propSMMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){const newMax=Math.max(10,parseFloat(v)||40);o.measure.maxD=newMax;o.measure.d=Math.max(-newMax,Math.min(newMax,o.measure.d??15));composite();markDirty();saveSnap('尺標最大垂距');} }
 function propSMMeasureColor(v) { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.color=v;composite();markDirty();} }
 function propSMMeasureSize(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.size=Math.max(8,Math.min(48,parseFloat(v)||11));composite();markDirty();saveSnap('尺標大小');} }
 function propSMMeasureNoBg(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.noBg=v;composite();markDirty();saveSnap('尺標底色');updatePropsPanel();} }
