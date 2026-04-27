@@ -7236,9 +7236,12 @@ function startMeasureEdit(objIdx) {
 function commitMeasureEdit(objIdx, val) {
   const obj = objects[objIdx];
   if (!obj || !obj.measure) return;
-  obj.measure.text = val.trim();
-  if (_constraintMode && val.trim() !== '' && !obj.constraintIndependent) {
-    _applyConstraint(obj, val);
+  const v = val.trim();
+  if (_constraintMode && v !== '' && !obj.constraintIndependent) {
+    _applyConstraint(obj, v);
+    obj.measure.text = ''; // clear so label tracks geometry, not the typed value
+  } else {
+    obj.measure.text = v;
   }
   composite(); markDirty(); saveSnap('編輯尺標');
 }
