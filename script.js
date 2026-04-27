@@ -80,6 +80,7 @@ let _dcRect        = null; // cached canvas bounding rect (set in applyZoom + on
 let _specialEditIdx = -1;  // declared early to avoid TDZ when applyZoom() runs at init
 let _seoFocusedKey = null;
 let _measureDrag = null;   // { objIdx, startMx, startMy, startT, startD }
+let _dimlineLabelDrag = null; // { objIdx, startMx, startMy, startT, startD, ep }
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -406,18 +407,20 @@ function drawDimline(ctx, obj) {
     ctx.fill();
   }
 
-  // Label at midpoint
-  const midX = (ep.x1 + ep.x2) / 2, midY = (ep.y1 + ep.y2) / 2;
+  // Label position (draggable via labelT/labelD)
   const autoVal = (ep.length * 21.0 / H).toFixed(1);
   const labelText = obj.labelText != null ? obj.labelText : autoVal;
   const fontSize = Math.max(10, Math.min(14, len * 0.07));
   ctx.font = `bold ${fontSize}px sans-serif`;
   const tw = ctx.measureText(labelText).width;
-  const LABEL_OFFSET = TICK_HALF + 4 + fontSize / 2;
-  const lx = midX + px * LABEL_OFFSET, ly = midY + py * LABEL_OFFSET;
   const PAD = 3;
-  // Cache label bounds for dblclick hit testing
-  obj._lastLabelPos = { x: lx, y: ly, hw: tw / 2 + PAD, hh: fontSize / 2 + PAD };
+  const defaultD = TICK_HALF + 4 + fontSize / 2;
+  const t = obj.labelT ?? 0.5;
+  const d = obj.labelD ?? defaultD;
+  const lx = ep.x1 + (ep.x2 - ep.x1) * t + px * d;
+  const ly = ep.y1 + (ep.y2 - ep.y1) * t + py * d;
+  // Cache label bounds for dblclick/drag hit testing
+  obj._lastLabelPos = { x: lx, y: ly, hw: tw / 2 + PAD, hh: fontSize / 2 + PAD, defaultD };
 
   // White background
   ctx.fillStyle = 'rgba(255,255,255,0.88)';
@@ -3245,6 +3248,21 @@ function onDown(e) {
   }
 
   if (tool === 'select') {
+    // Check dimline labels first (drag priority)
+    for (let mi = objects.length - 1; mi >= 0; mi--) {
+      const mo = objects[mi];
+      if (mo.type !== 'dimline') continue;
+      if (isLayerLocked(mo.layerId)) continue;
+      if (hitDimlineLabel(mo, pt.x, pt.y)) {
+        if (!selectedObjs.includes(mi)) { selectedObjs = [mi]; syncSel(); }
+        const ep = mo._lastEp;
+        if (ep) {
+          _dimlineLabelDrag = { objIdx: mi, startMx: pt.x, startMy: pt.y,
+            startT: mo.labelT ?? 0.5, startD: mo.labelD ?? (mo._lastLabelPos?.defaultD ?? 14), ep };
+        }
+        composite(); return;
+      }
+    }
     // Check measure labels first (drag priority)
     for (let mi = objects.length - 1; mi >= 0; mi--) {
       const mo = objects[mi];
@@ -3436,6 +3454,26 @@ function onDown(e) {
 }
 
 function onMove(e) {
+  if (_dimlineLabelDrag) {
+    const pt = getPos(e);
+    const dld = _dimlineLabelDrag;
+    const obj = objects[dld.objIdx];
+    if (!obj) { _dimlineLabelDrag = null; return; }
+    const ep = obj._lastEp || dld.ep;
+    if (!ep) { _dimlineLabelDrag = null; return; }
+    const ddx = ep.x2 - ep.x1, ddy = ep.y2 - ep.y1;
+    const len = Math.sqrt(ddx*ddx + ddy*ddy);
+    if (len < 1) return;
+    const ux = ddx/len, uy = ddy/len;
+    const ppx = -uy, ppy = ux;
+    const dmx = pt.x - dld.startMx, dmy = pt.y - dld.startMy;
+    let newT = dld.startT + (dmx*ux + dmy*uy) / len;
+    let newD = dld.startD + (dmx*ppx + dmy*ppy);
+    newT = Math.max(0, Math.min(1, newT));
+    obj.labelT = newT;
+    obj.labelD = newD;
+    composite(); return;
+  }
   if (_measureDrag) {
     const pt = getPos(e);
     const mobj = objects[_measureDrag.objIdx];
@@ -3904,6 +3942,9 @@ function onMove(e) {
 }
 
 function onUp(e) {
+  if (_dimlineLabelDrag) {
+    markDirty(); saveSnap('移動尺寸線數字'); _dimlineLabelDrag = null; composite(); return;
+  }
   if (_measureDrag) {
     markDirty(); saveSnap('移動尺標'); _measureDrag = null; composite(); return;
   }
