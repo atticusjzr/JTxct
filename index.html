@@ -7340,7 +7340,7 @@ function cmdNew() {
   if (!dirty) { doNew(); return; }
   openModal('新建專案', '<p class="modal-msg">有未儲存的修改，確定新建？</p>', [
     { text:'取消',      cls:'btn',         fn: closeModal },
-    { text:'儲存後新建', cls:'btn primary', fn: () => { cmdSave(); setTimeout(doNew, 200); closeModal(); } },
+    { text:'儲存後新建', cls:'btn primary', fn: () => { closeModal(); cmdSaveThen(doNew); } },
     { text:'直接新建',   cls:'btn danger',  fn: () => { doNew(); closeModal(); } },
   ]);
 }
@@ -7367,7 +7367,7 @@ function cmdSave() {
 function doSave() {
   const inp = document.getElementById('save-inp');
   const n   = inp?.value.trim();
-  if (!n) { alert('請輸入專案名稱'); return; }
+  if (!n) { alert('請輸入專案名稱'); return false; }
   closeModal();
   setProj(n);
   const data = {
@@ -7383,9 +7383,23 @@ function doSave() {
   try {
     localStorage.setItem('proj__' + n, JSON.stringify(data));
     clearDirty();
+    return true;
   } catch(err) {
     alert('儲存失敗（空間不足）：' + err.message);
+    return false;
   }
+}
+
+function cmdSaveThen(afterFn) {
+  openModal('儲存專案',
+    `<label style="display:block;margin-bottom:6px;font-size:12px;color:var(--dim)">專案名稱</label>
+     <input type="text" id="save-inp" value="${projName}" placeholder="輸入名稱">`,
+    [
+      { text:'取消', cls:'btn', fn: closeModal },
+      { text:'儲存', cls:'btn primary', fn: () => { if (doSave() !== false) afterFn?.(); } },
+    ]
+  );
+  setTimeout(() => { const i = document.getElementById('save-inp'); i?.focus(); i?.select(); }, 40);
 }
 
 // ── Project: OPEN ─────────────────────────────────────────
