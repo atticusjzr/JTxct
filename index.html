@@ -1252,6 +1252,7 @@ let linkedReflineOrig = null; // { idx,x1,y1,x2,y2 } – captured when dragging 
 let pendingDimline    = null; // { rotation } – dimline placement mode
 let _dimlinePt        = null; // current cursor position during dimline placement
 let _dimlineImgData   = null; // cached pixel data before drawing dimlines (for autoAdapt scan)
+let _obstacleCanvas   = null; // offscreen canvas with only obstacle-eligible content
 let _dcRect        = null; // cached canvas bounding rect (set in applyZoom + onDown)
 let _specialEditIdx = -1;  // declared early to avoid TDZ when applyZoom() runs at init
 let _seoFocusedKey = null;
@@ -1298,6 +1299,10 @@ class Layer {
   }
 }
 
+// Types that don't count as dimline obstacles
+const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline']);
+function _isObstacle(obj) { return !_NON_OBSTACLE.has(obj.type) && !obj.specialRole; }
+
 // ── Composite ────────────────────────────────────────────
 function updateRefpointBtn() {
   const exists = objects.some(o => o.type === 'refpoint');
@@ -1334,9 +1339,30 @@ function composite() {
   for (const obj of objects) {
     if ((!obj.layerId || !layerIds.has(obj.layerId)) && obj.type !== 'dimline') drawObjOnCtx(dCtx, obj);
   }
-  // Capture pixel data for dimline autoAdapt scanning
+  // Capture pixel data for dimline autoAdapt scanning (obstacle-only canvas)
   if (hasDimlines) {
-    _dimlineImgData = dCtx.getImageData(0, 0, dc.width, dc.height);
+    if (!_obstacleCanvas || _obstacleCanvas.width !== dc.width || _obstacleCanvas.height !== dc.height) {
+      _obstacleCanvas = document.createElement('canvas');
+      _obstacleCanvas.width = dc.width; _obstacleCanvas.height = dc.height;
+    }
+    const oc = _obstacleCanvas.getContext('2d');
+    oc.clearRect(0, 0, _obstacleCanvas.width, _obstacleCanvas.height);
+    oc.save(); oc.translate(CANVAS_MARGIN, CANVAS_MARGIN);
+    for (const l of layers) {
+      if (!l.visible || l.specialType) continue; // special layers are not obstacles
+      oc.save(); oc.globalAlpha = l.opacity;
+      oc.drawImage(l.canvas, 0, 0);
+      for (const obj of objects) {
+        if (obj.layerId === l.id && _isObstacle(obj)) drawObjOnCtx(oc, obj);
+      }
+      oc.restore();
+    }
+    oc.globalAlpha = 1;
+    for (const obj of objects) {
+      if ((!obj.layerId || !layerIds.has(obj.layerId)) && _isObstacle(obj)) drawObjOnCtx(oc, obj);
+    }
+    oc.restore();
+    _dimlineImgData = oc.getImageData(0, 0, _obstacleCanvas.width, _obstacleCanvas.height);
   }
   // Pass 2: draw dimlines on top
   for (const l of layers) {
