@@ -1423,6 +1423,10 @@ function applyRotInput() {
     obj.radius = clampTurnRadius({ ...obj, radius: Math.max(0, val) });
     syncTurnBBox(obj);
     showTurnValueLabel(getTurnHandles(obj).corner, obj.radius.toFixed(1), 'px');
+  } else if (turnEditMode === 'chanl-cor') {
+    obj.radius = clampTurnRadius({ ...obj, radius: Math.max(0, val) });
+    syncTurnBBox(obj);
+    showTurnValueLabel(getChanlHandles(obj).corner, obj.radius.toFixed(1), 'px');
   } else if (obj.type === 'refline') {
     const rp = objects.find(o => o.type === 'refpoint' && o.id === obj.refpointId);
     const cx = rp ? rp.x + rp.w / 2 : (obj.x1 + obj.x2) / 2;
@@ -2092,8 +2096,13 @@ function ptOnMarkingTurn(pt, obj) {
 // ── marking-chanl geometry ─────────────────────────────────
 function ptOnMarkingChanl(pt, obj) {
   const r = (obj.thickness || 10) / 2 + 4 / zoom;
-  return ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a1x, obj.cy+obj.a1y, r)
-      || ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a2x, obj.cy+obj.a2y, r);
+  if (ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a1x, obj.cy+obj.a1y, r)) return true;
+  if (ptNearSeg(pt, obj.cx, obj.cy, obj.cx+obj.a2x, obj.cy+obj.a2y, r)) return true;
+  const ax=obj.cx, ay=obj.cy, bx=obj.cx+obj.a1x, by=obj.cy+obj.a1y, vx=obj.cx+obj.a2x, vy=obj.cy+obj.a2y;
+  const d1=(bx-ax)*(pt.y-ay)-(by-ay)*(pt.x-ax);
+  const d2=(vx-bx)*(pt.y-by)-(vy-by)*(pt.x-bx);
+  const d3=(ax-vx)*(pt.y-vy)-(ay-vy)*(pt.x-vx);
+  return !((d1<0||d2<0||d3<0) && (d1>0||d2>0||d3>0));
 }
 function getChanlHandles(obj) {
   const a1L = Math.sqrt(obj.a1x**2+obj.a1y**2), a2L = Math.sqrt(obj.a2x**2+obj.a2y**2);
@@ -2171,13 +2180,13 @@ function applyChanlDrag(obj, orig, state, pt) {
       obj.a2x=nx*a2L; obj.a2y=ny*a2L; break;
     }
     case 'chanl-cor': {
-      // Move apex; arm endpoints stay fixed in world space
-      const e1x = orig.cx + orig.a1x, e1y = orig.cy + orig.a1y;
-      const e2x = orig.cx + orig.a2x, e2y = orig.cy + orig.a2y;
-      obj.cx = pt.x; obj.cy = pt.y;
-      obj.a1x = e1x - pt.x; obj.a1y = e1y - pt.y;
-      obj.a2x = e2x - pt.x; obj.a2y = e2y - pt.y;
-      break;
+      const a1L=Math.sqrt(orig.a1x**2+orig.a1y**2);
+      const a2L=Math.sqrt(orig.a2x**2+orig.a2y**2);
+      if (a1L<0.1||a2L<0.1) break;
+      const bx=(orig.a1x/a1L)+(orig.a2x/a2L), by=(orig.a1y/a1L)+(orig.a2y/a2L);
+      const bLen=Math.sqrt(bx*bx+by*by); if (bLen<0.01) break;
+      const proj=(pt.x-orig.cx)*(bx/bLen)+(pt.y-orig.cy)*(by/bLen);
+      obj.radius=Math.max(0, Math.min(Math.min(a1L,a2L)*0.85, (orig.radius||0)+proj)); break;
     }
   }
 }
@@ -3945,6 +3954,9 @@ function onDown(e) {
             turnRotCenter = { x: orig.cx, y: orig.cy };
             rotPrevAngle  = Math.atan2(pt.y - orig.cy, pt.x - orig.cx);
             objects[selectedObjs[0]].rotation = 0;
+          } else if (hit.type === 'chanl-cor') {
+            turnEditMode = 'chanl-cor';
+            showTurnValueLabel(getChanlHandles(orig).corner, ((orig.radius || 0)).toFixed(1), 'px');
           }
         } else {
           selectState = 'move';
@@ -4192,6 +4204,9 @@ function onMove(e) {
       const obj = objects[selectedObjs[0]];
       applyChanlDrag(obj, selectObjOrig[0], selectState, pt);
       syncTurnBBox(obj);
+      if (selectState === 'chanl-cor') {
+        showTurnValueLabel(getChanlHandles(obj).corner, ((obj.radius || 0)).toFixed(1), 'px');
+      }
       composite(); return;
     } else if (selectState === 'resize') {
       const obj = objects[selectedObjs[0]];
@@ -4575,7 +4590,7 @@ function onUp(e) {
         if (rw > 10 && rh > 10) {
           const tan15 = Math.tan(Math.PI / 12);
           const cobj = { type:'marking-chanl', cx:rx, cy:ry+rh/2, a1x:rw, a1y:-tan15*rw, a2x:rw, a2y:tan15*rw,
-                         thickness:10, color:mColor, rotation:0, x:0, y:0, w:0, h:0 };
+                         thickness:10, color:mColor, radius:0, rotation:0, x:0, y:0, w:0, h:0 };
           syncTurnBBox(cobj);
           cobj.layerId = layers[activeIdx].id;
           objects.push(cobj);
@@ -6242,6 +6257,8 @@ function drawMarkingChanl(ctx, obj) {
   const { cx, cy, a1x, a1y, a2x, a2y, color, thickness } = obj;
   const lw = thickness || 10;
   const clr = color || '#ffffff';
+  const a1L = Math.sqrt(a1x**2 + a1y**2), a2L = Math.sqrt(a2x**2 + a2y**2);
+  const r = Math.min(Math.max(0, obj.radius || 0), Math.min(a1L, a2L) * 0.9);
   const ex1 = cx + a1x, ey1 = cy + a1y;
   const ex2 = cx + a2x, ey2 = cy + a2y;
   const xs = [cx, ex1, ex2], ys = [cy, ey1, ey2];
@@ -6250,13 +6267,18 @@ function drawMarkingChanl(ctx, obj) {
   const sp = obj.hatchSpacing ?? Math.max(lw * 2.2, 12);
   _drawHatch(ctx, () => {
     ctx.beginPath();
-    ctx.moveTo(cx, cy); ctx.lineTo(ex1, ey1); ctx.lineTo(ex2, ey2); ctx.closePath();
+    ctx.moveTo(ex1, ey1);
+    if (r > 0.5) { ctx.arcTo(cx, cy, ex2, ey2, r); } else { ctx.lineTo(cx, cy); }
+    ctx.lineTo(ex2, ey2);
+    ctx.closePath();
   }, minX, minY, maxX, maxY, obj.hatchAngle ?? 45, sp, lw * 0.55, clr);
   // boundary lines on top
   ctx.save();
   ctx.strokeStyle = clr; ctx.lineWidth = lw; ctx.lineCap = 'square'; ctx.lineJoin = 'miter'; ctx.setLineDash([]);
   ctx.beginPath();
-  ctx.moveTo(ex1, ey1); ctx.lineTo(cx, cy); ctx.lineTo(ex2, ey2);
+  ctx.moveTo(ex1, ey1);
+  if (r > 0.5) { ctx.arcTo(cx, cy, ex2, ey2, r); } else { ctx.lineTo(cx, cy); }
+  ctx.lineTo(ex2, ey2);
   ctx.stroke();
   ctx.restore();
 }
