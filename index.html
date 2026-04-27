@@ -2866,14 +2866,25 @@ function _getCarHandleConstraints(car) {
   for (const o of objects) {
     if (o.type !== 'position-mark' || o.carId !== car.id || !o.constraintLocked) continue;
     if (typeof o.cornerIdx !== 'number') continue;
-    const C = o.cornerIdx;
+    let C = o.cornerIdx;
+    if (MOTO_TYPES.has(car.type)) {
+      // Moto PM cornerIdx (0=rear,1=front) → nearest bbox corner by local quadrant
+      const pts = getMotoWheelBottoms(car);
+      const pt = pts[C];
+      if (pt) {
+        const cx = car.x + car.w/2, cy = car.y + car.h/2;
+        const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+        const lx = (pt.x-cx)*cosR + (pt.y-cy)*sinR;
+        const ly = -(pt.x-cx)*sinR + (pt.y-cy)*cosR;
+        C = lx >= 0 ? (ly < 0 ? 1 : 2) : (ly < 0 ? 0 : 3);
+      }
+    }
     disabledCorners.add(C);
     disabledEdges.add(C);
     disabledEdges.add((C + 3) % 4);
     disabledRotate = true;
     const next     = (C + 1) % 4;
     const prev     = (C + 3) % 4;
-    // next shares same local-y (C even) or same local-x (C odd)
     const nextMode = (C % 2 === 0) ? 'w-only' : 'h-only';
     const prevMode = (C % 2 === 0) ? 'h-only' : 'w-only';
     if (!disabledCorners.has(next)) {
