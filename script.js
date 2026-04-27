@@ -270,16 +270,18 @@ function getDimlineEndpoints(obj) {
     const isVert  = Math.abs(cos) < 0.01;
 
     if (isHoriz || isVert) {
+      const _oc = _obstacleCanvas;
+      const _octx = _oc && _oc.getContext('2d');
       let strip;
       if (isHoriz) {
         const sy = Math.round(obj.cy + CANVAS_MARGIN);
-        if (sy >= 0 && sy < dc.height) {
-          strip = dCtx.getImageData(0, sy, dc.width, 1).data;
+        if (_octx && sy >= 0 && sy < _oc.height) {
+          strip = _octx.getImageData(0, sy, _oc.width, 1).data;
         }
       } else {
         const sx = Math.round(obj.cx + CANVAS_MARGIN);
-        if (sx >= 0 && sx < dc.width) {
-          strip = dCtx.getImageData(sx, 0, 1, dc.height).data;
+        if (_octx && sx >= 0 && sx < _oc.width) {
+          strip = _octx.getImageData(sx, 0, 1, _oc.height).data;
         }
       }
       if (strip) {
