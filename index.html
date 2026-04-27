@@ -840,6 +840,7 @@ body {
   <button class="btn icon-only" id="btn-redo" onclick="redo()" title="重做 (Ctrl+Y)">
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7H11a6 6 0 1 0 0 12h6"/><polyline points="21 7 17 3 17 11"/></svg>
   </button>
+  <button class="btn" onclick="cmdSnapToAxis()" title="將選取物件的旋轉角度對齊至最近的 90° 倍數">水平垂直校正</button>
   <div class="sep"></div>
   <span id="proj-label">專案：</span>
   <span id="proj-name" title="雙擊改名" ondblclick="startRenameProj()">未命名</span>
@@ -4730,6 +4731,40 @@ function applySnap(snap) {
 
 function undo() { if (histIdx <= 0) return; histIdx--; applySnap(hist[histIdx]); renderHist(); }
 function redo() { if (histIdx >= hist.length - 1) return; histIdx++; applySnap(hist[histIdx]); renderHist(); }
+
+function cmdSnapToAxis() {
+  if (!selectedObjs.length) { showToast('請先選取物件'); return; }
+  const HALF_PI = Math.PI / 2;
+  const snapAngle = a => Math.round(a / HALF_PI) * HALF_PI;
+  const snapVec = (ax, ay) => {
+    const len = Math.sqrt(ax*ax + ay*ay);
+    if (len < 0.01) return { x: ax, y: ay };
+    const snapped = snapAngle(Math.atan2(ay, ax));
+    return { x: Math.round(len * Math.cos(snapped) * 1e6) / 1e6,
+             y: Math.round(len * Math.sin(snapped) * 1e6) / 1e6 };
+  };
+  selectedObjs.forEach(i => {
+    const obj = objects[i];
+    if (!obj) return;
+    if (obj.type === 'refline') {
+      const dx = obj.x2 - obj.x1, dy = obj.y2 - obj.y1;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      const snapped = snapAngle(Math.atan2(dy, dx));
+      obj.x2 = obj.x1 + len * Math.cos(snapped);
+      obj.y2 = obj.y1 + len * Math.sin(snapped);
+    } else if (obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
+      const v1 = snapVec(obj.a1x, obj.a1y);
+      const v2 = snapVec(obj.a2x, obj.a2y);
+      obj.a1x = v1.x; obj.a1y = v1.y;
+      obj.a2x = v2.x; obj.a2y = v2.y;
+      syncTurnBBox(obj);
+    } else if (obj.rotation !== undefined) {
+      obj.rotation = snapAngle(obj.rotation || 0);
+    }
+  });
+  composite(); markDirty(); saveSnap('水平垂直校正');
+  updatePropsPanel();
+}
 
 function jumpToHist(idx) {
   if (idx < 0 || idx >= hist.length || idx === histIdx) return;

@@ -3562,6 +3562,40 @@ function applySnap(snap) {
 function undo() { if (histIdx <= 0) return; histIdx--; applySnap(hist[histIdx]); renderHist(); }
 function redo() { if (histIdx >= hist.length - 1) return; histIdx++; applySnap(hist[histIdx]); renderHist(); }
 
+function cmdSnapToAxis() {
+  if (!selectedObjs.length) { showToast('請先選取物件'); return; }
+  const HALF_PI = Math.PI / 2;
+  const snapAngle = a => Math.round(a / HALF_PI) * HALF_PI;
+  const snapVec = (ax, ay) => {
+    const len = Math.sqrt(ax*ax + ay*ay);
+    if (len < 0.01) return { x: ax, y: ay };
+    const snapped = snapAngle(Math.atan2(ay, ax));
+    return { x: Math.round(len * Math.cos(snapped) * 1e6) / 1e6,
+             y: Math.round(len * Math.sin(snapped) * 1e6) / 1e6 };
+  };
+  selectedObjs.forEach(i => {
+    const obj = objects[i];
+    if (!obj) return;
+    if (obj.type === 'refline') {
+      const dx = obj.x2 - obj.x1, dy = obj.y2 - obj.y1;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      const snapped = snapAngle(Math.atan2(dy, dx));
+      obj.x2 = obj.x1 + len * Math.cos(snapped);
+      obj.y2 = obj.y1 + len * Math.sin(snapped);
+    } else if (obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
+      const v1 = snapVec(obj.a1x, obj.a1y);
+      const v2 = snapVec(obj.a2x, obj.a2y);
+      obj.a1x = v1.x; obj.a1y = v1.y;
+      obj.a2x = v2.x; obj.a2y = v2.y;
+      syncTurnBBox(obj);
+    } else if (obj.rotation !== undefined) {
+      obj.rotation = snapAngle(obj.rotation || 0);
+    }
+  });
+  composite(); markDirty(); saveSnap('水平垂直校正');
+  updatePropsPanel();
+}
+
 function jumpToHist(idx) {
   if (idx < 0 || idx >= hist.length || idx === histIdx) return;
   histIdx = idx; applySnap(hist[histIdx]); renderHist();
