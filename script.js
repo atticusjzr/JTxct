@@ -424,7 +424,6 @@ function drawDimline(ctx, obj) {
   // Cache label bounds for dblclick/drag hit testing
   obj._lastLabelPos = { x: lx, y: ly, hw: tw / 2 + PAD, hh: fontSize / 2 + PAD, defaultD };
 
-  const labelColor = obj.labelColor || color;
   const actualFontSize = obj.labelSize || fontSize;
   if (actualFontSize !== fontSize) { ctx.font = `bold ${actualFontSize}px sans-serif`; }
   if (!obj.labelNoBg) {
@@ -432,7 +431,7 @@ function drawDimline(ctx, obj) {
     ctx.fillStyle = bgC === '#ffffff' ? 'rgba(255,255,255,0.88)' : bgC;
     ctx.fillRect(lx - tw / 2 - PAD, ly - actualFontSize / 2 - PAD, tw + PAD * 2, actualFontSize + PAD * 2);
   }
-  ctx.fillStyle = labelColor;
+  ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(labelText, lx, ly);
@@ -2308,11 +2307,9 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>自動偵測</label><input type="checkbox" ${obj.autoAdapt!==false?'checked':''} onchange="propDimlineAutoAdapt(this.checked)"><span style="font-size:11px;color:var(--dim);margin-left:4px">${obj.autoAdapt!==false?'開啟（右鍵可關閉）':'關閉（右鍵可開啟）'}</span></div>`);
     rows.push('<div style="font-size:11px;font-weight:600;color:var(--text2,#888);padding:6px 0 2px">數字標籤</div>');
     rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-dlsync" ${_syncDimlines?'checked':''} onchange="_syncDimlines=this.checked"><span style="font-size:11px;margin-left:4px">同步全部尺寸線</span></div>`);
-    const lc = obj.labelColor || obj.color || '#e53935';
     const ls = obj.labelSize || '';
     const lnb = !!obj.labelNoBg;
     const lbg = obj.labelBgColor || '#ffffff';
-    rows.push(`<div class="prop-row"><label>數字顏色</label><input type="color" id="pr-dlcolor" value="${lc}" oninput="propDimlineLabelColor(this.value)" onchange="saveSnap('數字顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>數字大小</label><input type="number" id="pr-dlsize" min="8" max="48" value="${ls}" placeholder="自動" onchange="propDimlineLabelSize(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>數字底色</label><input type="checkbox" ${lnb?'checked':''} onchange="propDimlineLabelNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-dlbgcolor" value="${lbg}" ${lnb?'disabled':''} oninput="propDimlineLabelBgColor(this.value)" onchange="saveSnap('數字底色')"></div>`);
   }
