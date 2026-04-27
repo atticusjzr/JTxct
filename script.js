@@ -5272,6 +5272,61 @@ arrowThreeWayImg.onload     = () => _setArrowToolIcon('[data-v="arrow-three-way"
   const el = document.querySelector('[data-v="chanl"] .opt-icon-img');
   if (el) el.src = c.toDataURL();
 })();
+(function _genArrowIcon() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 28;
+  const cx = c.getContext('2d');
+  cx.fillStyle = '#3a3a3a'; cx.fillRect(0, 0, 28, 28);
+  const x=7, y=1, w=14, h=26;
+  const bh = Math.min(h*0.50, w*0.85);
+  cx.fillStyle = '#ffffff';
+  cx.beginPath();
+  cx.moveTo(x+w*0.50, y);
+  cx.lineTo(x+w,       y+bh);
+  cx.lineTo(x+w*0.65,  y+bh);
+  cx.lineTo(x+w*0.65,  y+h);
+  cx.lineTo(x+w*0.35,  y+h);
+  cx.lineTo(x+w*0.35,  y+bh);
+  cx.lineTo(x,         y+bh);
+  cx.closePath(); cx.fill();
+  const el = document.querySelector('[data-v="arrow"] .opt-icon-img');
+  if (el) el.src = c.toDataURL();
+})();
+(function _genGridIcon() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 28;
+  const cx = c.getContext('2d');
+  cx.fillStyle = '#2a2a2a'; cx.fillRect(0, 0, 28, 28);
+  const bx=2, by=2, bw=24, bh=24, sp=8;
+  cx.save();
+  cx.beginPath(); cx.rect(bx, by, bw, bh); cx.clip();
+  cx.strokeStyle = '#f9c400'; cx.lineWidth = 1.8; cx.lineCap = 'butt';
+  cx.beginPath();
+  for (let k = -bh; k <= bw+bh; k += sp) {
+    cx.moveTo(bx+k,    by);    cx.lineTo(bx+k+bh, by+bh); // \ lines
+    cx.moveTo(bx+k+bh, by);    cx.lineTo(bx+k,    by+bh); // / lines
+  }
+  cx.stroke(); cx.restore();
+  cx.strokeStyle = '#f9c400'; cx.lineWidth = 2.5;
+  cx.strokeRect(bx+1.25, by+1.25, bw-2.5, bh-2.5);
+  const el = document.querySelector('[data-v="grid"] .opt-icon-img');
+  if (el) el.src = c.toDataURL();
+})();
+(function _genMotoZoneIcon() {
+  function draw() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 28;
+    const cx = c.getContext('2d');
+    cx.fillStyle = '#2a2a2a'; cx.fillRect(0, 0, 28, 28);
+    cx.strokeStyle = '#ffffff'; cx.lineWidth = 1.5; cx.lineCap = 'square';
+    cx.strokeRect(1.75, 1.75, 24.5, 24.5);
+    drawMotoRiderIcon(cx, 14, 15, 15, '#ffffff');
+    const el = document.querySelector('[data-v="moto-zone"] .opt-icon-img');
+    if (el) el.src = c.toDataURL();
+  }
+  if (_riderImg.complete && _riderImg.naturalWidth) draw();
+  else _riderImg.addEventListener('load', draw);
+})();
 
 function drawMarkingArrow(ctx, obj) {
   const { x, y, w, h, color } = obj;
