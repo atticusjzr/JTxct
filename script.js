@@ -2672,10 +2672,17 @@ function propSetDash(v) {
   const o = _propObj(); if (!o) return;
   o.dash = v; composite(); markDirty(); saveSnap('虛線');
 }
+function _snapDimlineCxToEp(obj) {
+  const ep = obj._lastEp;
+  if (!ep) return;
+  obj.cx = (ep.x1 + ep.x2) / 2;
+  obj.cy = (ep.y1 + ep.y2) / 2;
+  obj.fixedLen = ep.length;
+}
 function propDimlineAutoAdapt(v) {
   const obj = _propObj();
   if (!obj || obj.type !== 'dimline') return;
-  if (!v) { const ep = obj._lastEp || getDimlineEndpoints(obj); obj.fixedLen = ep.length; }
+  if (!v) _snapDimlineCxToEp(obj);
   obj.autoAdapt = v;
   composite(); markDirty(); saveSnap('尺寸線自動偵測');
   updatePropsPanel();
@@ -2685,8 +2692,7 @@ function ctxToggleDimlineAdapt() {
   const obj = objects[selectedObjs[0]];
   if (!obj || obj.type !== 'dimline') return;
   if (obj.autoAdapt !== false) {
-    const ep = obj._lastEp;
-    obj.fixedLen = ep ? ep.length : (obj.fixedLen || 0);
+    _snapDimlineCxToEp(obj);
     obj.autoAdapt = false;
   } else {
     obj.autoAdapt = true;
@@ -3529,7 +3535,11 @@ function onDown(e) {
         const d1 = Math.hypot(pt.x - ep.x1, pt.y - ep.y1);
         const d2 = Math.hypot(pt.x - ep.x2, pt.y - ep.y2);
         if (d1 < r || d2 < r) {
-          _dimlineEndDrag = { objIdx: mi, side: d1 < r ? -1 : 1, cos, sin };
+          const side = d1 < r ? -1 : 1;
+          // Fixed endpoint is opposite to the dragged side
+          const fixedX = side < 0 ? ep.x2 : ep.x1;
+          const fixedY = side < 0 ? ep.y2 : ep.y1;
+          _dimlineEndDrag = { objIdx: mi, side, cos, sin, fixedX, fixedY };
           composite(); return;
         }
       }
@@ -3762,10 +3772,13 @@ function onMove(e) {
     const pt = getPos(e);
     const obj = objects[_dimlineEndDrag.objIdx];
     if (!obj) { _dimlineEndDrag = null; return; }
-    const { cos, sin } = _dimlineEndDrag;
-    const dx = pt.x - obj.cx, dy = pt.y - obj.cy;
-    const proj = Math.abs(dx * cos + dy * sin);
-    obj.fixedLen = Math.max(10, proj * 2);
+    const { cos, sin, fixedX, fixedY } = _dimlineEndDrag;
+    const proj = (pt.x - fixedX) * cos + (pt.y - fixedY) * sin;
+    const newLen = Math.max(10, Math.abs(proj));
+    const dir = proj < 0 ? -1 : 1;
+    obj.fixedLen = newLen;
+    obj.cx = fixedX + dir * newLen / 2 * cos;
+    obj.cy = fixedY + dir * newLen / 2 * sin;
     composite(); return;
   }
   if (_dimlineLabelDrag) {
