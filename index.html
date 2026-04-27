@@ -3389,7 +3389,7 @@ function updatePropsPanel() {
   }
 
   // Color
-  const NO_COLOR = new Set(['position-mark']); // position-mark does have color but it's a sub-object
+  const NO_COLOR = new Set(['position-mark', 'dimline']); // these handle color in their own section
   if (obj.color !== undefined && !NO_COLOR.has(t)) {
     rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-color" value="${obj.color || '#000000'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
   } else if (t === 'position-mark' && obj.color !== undefined) {
