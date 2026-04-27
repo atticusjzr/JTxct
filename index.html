@@ -1578,6 +1578,8 @@ function drawObjOnCtx(ctx, obj) {
     drawSizeMark(ctx, obj);
   } else if (obj.type === 'freetext') {
     drawFreeText(ctx, obj);
+  } else if (obj.type === 'image') {
+    drawImageObj(ctx, obj);
   } else if (obj.type.startsWith('marking-')) {
     drawMarkingDblSolid(ctx, obj.x, obj.y, obj.w, obj.h, obj.color || '#f9c400');
   } else {
@@ -2791,7 +2793,7 @@ const OBJ_TYPE_NAMES = {
   'marking-moto-zone':'機車停等區', 'marking-parking':'停車格',
   'marking-rect':'實色矩形', 'marking-text':'標字',
   'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-sepisle':'分隔島', 'marking-chanl':'槽化線',
-  'freetext': '文字',
+  'freetext': '文字', 'image': '圖片',
 };
 
 function updatePropsPanel() {
@@ -2825,7 +2827,7 @@ function updatePropsPanel() {
   const HAS_ROT = new Set(['car','truck','bus','semi','artic','moto','hydrant','compass',
     'marking-single-solid','marking-single-dashed','marking-dbl-solid','marking-zebra',
     'marking-grid','marking-moto-zone','marking-parking','marking-rect','marking-text',
-    'marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle']);
+    'marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle','image']);
   if (HAS_ROT.has(t)) {
     const deg = Math.round(((obj.rotation || 0) * 180 / Math.PI + 360) % 360);
     rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="range" min="0" max="359" step="1" value="${deg}" oninput="this.nextElementSibling.value=this.value;propSetRotationLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-rotation" min="0" max="359" step="1" value="${deg}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetRotationLive(this.value)" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
@@ -6222,6 +6224,26 @@ function drawMarkingZebra(ctx, x, y, w, h, clr, dashLen, gapLen) {
   ctx.restore();
 }
 
+// ── Image object ─────────────────────────────────────────
+const _imgCache = new Map();
+function _getImg(src) {
+  if (!src) return null;
+  const cached = _imgCache.get(src);
+  if (cached instanceof HTMLImageElement) return cached;
+  if (cached === 'loading') return null;
+  _imgCache.set(src, 'loading');
+  const img = new Image();
+  img.onload = () => { _imgCache.set(src, img); composite(); };
+  img.onerror = () => { _imgCache.set(src, null); };
+  img.src = src;
+  return null;
+}
+function drawImageObj(ctx, obj) {
+  const img = _getImg(obj.src);
+  if (!img) return;
+  ctx.drawImage(img, obj.x, obj.y, obj.w, obj.h);
+}
+
 function drawMarkingTurn(ctx, obj) {
   const { cx, cy, a1x, a1y, a2x, a2y, color, thickness, radius } = obj;
   const a1L = Math.sqrt(a1x**2 + a1y**2), a2L = Math.sqrt(a2x**2 + a2y**2);
@@ -6841,11 +6863,10 @@ function cmdImport() {
   }
 }
 
-// ── 插入圖片（貼到當前圖層）──────────────────────────────
+// ── 插入圖片（物件，可移動縮放旋轉）──────────────────────────────
 function cmdInsertImage() {
   const activeLayer = layers[activeIdx];
   if (!activeLayer) return;
-  if (isLayerLocked(activeLayer.id)) { showToast('當前圖層已鎖定，請先解鎖再插入圖片'); return; }
   const inp = document.createElement('input');
   inp.type   = 'file';
   inp.accept = 'image/*';
@@ -6856,15 +6877,26 @@ function cmdInsertImage() {
     reader.onload = ev => {
       const img = new Image();
       img.onload = () => {
-        saveSnap('插入圖片前');
-        const ctx = activeLayer.ctx;
         const scale = Math.min(1, W / img.width, H / img.height);
-        const dw = img.width  * scale;
-        const dh = img.height * scale;
-        ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        const dw = Math.round(img.width  * scale);
+        const dh = Math.round(img.height * scale);
+        const src = ev.target.result;
+        _imgCache.set(src, img);
+        const obj = {
+          type: 'image', src,
+          x: Math.round((W - dw) / 2), y: Math.round((H - dh) / 2),
+          w: dw, h: dh,
+          rotation: 0, flipH: false, flipV: false, opacity: 1,
+          layerId: activeLayer.id,
+        };
+        objects.push(obj);
+        selectedObjs = [objects.length - 1];
+        selectObjOrig = [{ ...obj }];
         composite();
         markDirty();
         saveSnap('插入圖片');
+        updatePropsPanel();
+        setTool('select');
       };
       img.src = ev.target.result;
     };
