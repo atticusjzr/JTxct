@@ -36,6 +36,9 @@
   <span id="proj-name" title="雙擊改名" ondblclick="startRenameProj()">未命名</span>
   <input id="proj-name-input" style="display:none" onblur="commitRenameProj()" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){cancelRenameProj();}">
   <span id="dirty-dot"> ●</span>
+  <div class="sep"></div>
+  <span style="font-size:11px;color:var(--dim)">比例尺</span><span id="scale-display" style="cursor:pointer;font-size:12px;font-weight:600;padding:2px 6px;border:1px solid var(--border);border-radius:4px;margin:0 4px" onclick="openScaleDialog()" title="點擊更改比例尺">1:100</span>
+  <button class="btn" id="btn-constraint" onclick="toggleConstraintMode()">自由編輯</button>
 </div>
 
 <!-- ══ MAIN ═════════════════════════════════════════════ -->

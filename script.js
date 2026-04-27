@@ -86,6 +86,8 @@ let _syncMeasures = false; // sync all measure labels of same vehicle
 let _syncPSMeasures = false; // sync all pos-seg-mark measure labels of same vehicle
 let _syncDimlines = false; // sync all dimline label settings
 let _posSegDragInfo = null; // { px, py, peers:[{idx,origPerp}] }
+let _scale = 100;           // display scale denominator (100 = 1:100, display in meters)
+let _constraintMode = false;
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -413,7 +415,7 @@ function drawDimline(ctx, obj) {
   }
 
   // Label position (draggable via labelT/labelD)
-  const autoVal = (ep.length * 21.0 / H).toFixed(1);
+  const autoVal = _measDisplay(ep.length);
   const labelText = obj.labelText != null ? obj.labelText : autoVal;
   const fontSize = Math.max(10, Math.min(14, len * 0.07));
   ctx.font = `bold ${fontSize}px sans-serif`;
@@ -465,13 +467,18 @@ function startDimlineEdit(objIdx) {
   const inp = document.createElement('input');
   inp.id = 'measure-edit-inp';
   inp.type = 'text';
-  const autoVal = obj._lastEp ? (obj._lastEp.length * 21.0 / H).toFixed(1) : '';
+  const autoVal = obj._lastEp ? _measDisplay(obj._lastEp.length) : '';
   inp.value = obj.labelText != null ? obj.labelText : autoVal;
   const fs = Math.max(10, 12) * zoom;
   inp.style.cssText = `position:absolute;left:${Math.round((p.x+CANVAS_MARGIN)*zoom-60)}px;top:${Math.round((p.y+CANVAS_MARGIN)*zoom-14)}px;width:120px;background:#fff;border:2px solid #e53935;border-radius:4px;padding:2px 6px;font-size:${fs}px;text-align:center;z-index:500;outline:none;box-sizing:border-box;`;
   const commit = () => {
     const v = inp.value.trim();
-    obj.labelText = v === '' || v === autoVal ? null : v;
+    if (_constraintMode && v !== '' && !obj.constraintIndependent) {
+      _applyConstraint(obj, v);
+      obj.labelText = null;
+    } else {
+      obj.labelText = v === '' || v === autoVal ? null : v;
+    }
     inp.remove();
     composite(); markDirty(); saveSnap('編輯尺寸線標籤');
   };
@@ -1785,7 +1792,7 @@ function drawPosSeg(ctx, obj) {
     const m = obj.measure;
     const t = m.t ?? 0.5, d = m.d ?? 15;
     const mx = a.x + dx*t + px*d, my = a.y + dy*t + py*d;
-    const cmVal = (len * 21.0 / H).toFixed(1);
+    const cmVal = _measDisplay(len);
     const text = m.text || cmVal;
     const sz = m.size || 11;
     ctx.font = `bold ${sz}px sans-serif`;
@@ -2558,6 +2565,14 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>格數</label><input type="number" id="pr-count" min="1" max="30" value="${obj.count || 3}" onchange="propSetCount(this.value)"></div>`);
   }
 
+  // Constraint mode lock/independent rows
+  const _CONSTRAINT_TYPES = new Set(['dimline','position-mark','pos-seg-mark','size-mark']);
+  if (_constraintMode && _CONSTRAINT_TYPES.has(t)) {
+    rows.push(`<div class="prop-row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><label style="color:var(--accent,#5c6bc0);font-size:11px">約束編輯</label></div>`);
+    rows.push(`<div class="prop-row"><label>鎖定</label><input type="checkbox" ${obj.constraintLocked?'checked':''} onchange="propSetConstraintLocked(this.checked)" title="鎖定後此線段不受其他線段的約束影響"></div>`);
+    rows.push(`<div class="prop-row"><label>獨立</label><input type="checkbox" ${obj.constraintIndependent?'checked':''} onchange="propSetConstraintIndependent(this.checked)" title="勾選後只有此線段的標記數字跟隨變化，不影響其他線段"></div>`);
+  }
+
   body.innerHTML = rows.join('');
   tpSync();
 }
@@ -2872,6 +2887,14 @@ function propSetCount(v) {
   const o = _propObj(); if (!o) return;
   o.count = Math.max(1, parseInt(v) || 3);
   composite(); markDirty(); saveSnap('格數');
+}
+function propSetConstraintLocked(v) {
+  const o = _propObj(); if (!o) return;
+  o.constraintLocked = v; markDirty();
+}
+function propSetConstraintIndependent(v) {
+  const o = _propObj(); if (!o) return;
+  o.constraintIndependent = v; markDirty();
 }
 
 // ── Resize edge (单边拉伸) ────────────────────────────────
@@ -5808,6 +5831,45 @@ function setReflineDash(val) {
 
 const PX_PER_CM = W / 29.7;
 
+function _measDisplay(px) {
+  return (px / PX_PER_CM * _scale / 100).toFixed(1);
+}
+function _pxFromDisplay(v) {
+  const n = Math.min(100, Math.max(0, parseFloat(v) || 0));
+  return n * PX_PER_CM * 100 / _scale;
+}
+function openScaleDialog() {
+  openModal('更改比例尺',
+    `<label style="display:block;margin-bottom:6px;font-size:12px;color:var(--dim)">輸入比例尺分母（例如：100 代表 1:100，50 代表 1:50）</label>
+     <input type="number" id="scale-inp" min="1" max="9999" step="1" value="${_scale}" style="width:100%">
+     <p style="margin:10px 0 0;font-size:11px;color:var(--dim)">目前：1:${_scale}（1cm 紙面 = ${(_scale/100).toFixed(2)}m 現實）</p>`,
+    [
+      { text:'取消', cls:'btn', fn: closeModal },
+      { text:'確認', cls:'btn primary', fn: () => {
+        const v = parseInt(document.getElementById('scale-inp')?.value || _scale);
+        if (v > 0) {
+          _scale = v;
+          const sd = document.getElementById('scale-display');
+          if (sd) sd.textContent = '1:' + _scale;
+          composite(); markDirty();
+        }
+        closeModal();
+      }},
+    ]
+  );
+  setTimeout(() => { const i = document.getElementById('scale-inp'); i?.focus(); i?.select(); }, 40);
+}
+function toggleConstraintMode() {
+  _constraintMode = !_constraintMode;
+  const btn = document.getElementById('btn-constraint');
+  if (btn) {
+    btn.textContent = _constraintMode ? '約束編輯' : '自由編輯';
+    btn.style.background = _constraintMode ? 'var(--accent,#5c6bc0)' : '';
+    btn.style.color = _constraintMode ? '#fff' : '';
+  }
+  updatePropsPanel();
+}
+
 function reflineMeasurePos(obj) {
   const m = obj.measure;
   if (!m) return null;
@@ -5822,7 +5884,7 @@ function reflineMeasurePos(obj) {
 function reflineMeasureText(obj) {
   if (obj.measure && obj.measure.text) return obj.measure.text;
   const dx = obj.x2-obj.x1, dy = obj.y2-obj.y1;
-  return (Math.sqrt(dx*dx+dy*dy) / PX_PER_CM).toFixed(1) + 'cm';
+  return _measDisplay(Math.sqrt(dx*dx+dy*dy));
 }
 
 function hitReflineMeasure(obj, mx, my) {
@@ -5855,7 +5917,7 @@ function posMarkMeasureText(obj) {
   const ep = _posMarkEndpoints(obj);
   if (!ep) return '';
   const { c, f } = ep;
-  return (Math.sqrt((f.x-c.x)**2 + (f.y-c.y)**2) / PX_PER_CM).toFixed(1);
+  return _measDisplay(Math.sqrt((f.x-c.x)**2 + (f.y-c.y)**2));
 }
 
 function hitPosMarkMeasure(obj, mx, my) {
@@ -5887,7 +5949,7 @@ function sizeMarkMeasureText(obj) {
   const ep = _sizeMarkEndpoints(obj);
   if (!ep) return '';
   const dx = ep.b.x - ep.a.x, dy = ep.b.y - ep.a.y;
-  return (Math.sqrt(dx*dx + dy*dy) / PX_PER_CM).toFixed(1);
+  return _measDisplay(Math.sqrt(dx*dx + dy*dy));
 }
 
 function hitSizeMarkMeasure(obj, mx, my) {
@@ -5960,7 +6022,7 @@ function posSegMeasureText(obj) {
   const ep = _posSegFeet(obj);
   if (!ep) return '';
   const dx = ep.b.x - ep.a.x, dy = ep.b.y - ep.a.y;
-  return (Math.sqrt(dx*dx+dy*dy) * 21.0 / H).toFixed(1);
+  return _measDisplay(Math.sqrt(dx*dx+dy*dy));
 }
 
 function startMeasureEdit(objIdx) {
@@ -5995,7 +6057,62 @@ function commitMeasureEdit(objIdx, val) {
   const obj = objects[objIdx];
   if (!obj || !obj.measure) return;
   obj.measure.text = val.trim();
+  if (_constraintMode && val.trim() !== '' && !obj.constraintIndependent) {
+    _applyConstraint(obj, val);
+  }
   composite(); markDirty(); saveSnap('編輯尺標');
+}
+
+function _applyConstraint(obj, val) {
+  const n = Math.min(100, Math.max(0, parseFloat(val) || 0));
+  if (!n) return;
+  const targetPx = _pxFromDisplay(n);
+
+  if (obj.type === 'dimline') {
+    obj.fixedLen = targetPx;
+    obj.autoAdapt = false;
+    _snapDimlineCxToEp(obj);
+    return;
+  }
+
+  if (obj.type === 'position-mark') {
+    const car = objects.find(o => o.id === obj.carId);
+    const ep = _posMarkEndpoints(obj);
+    if (!car || !ep || car.constraintLocked) return;
+    const { c, f } = ep;
+    const curPx = Math.sqrt((c.x-f.x)**2 + (c.y-f.y)**2);
+    if (curPx < 1) return;
+    const delta = targetPx - curPx;
+    car.x += (c.x-f.x)/curPx * delta;
+    car.y += (c.y-f.y)/curPx * delta;
+    return;
+  }
+
+  if (obj.type === 'pos-seg-mark' && obj.segIdx === 'rp') {
+    const car = objects.find(o => o.id === obj.carId);
+    const ep = _posSegFeet(obj);
+    if (!car || !ep || car.constraintLocked) return;
+    const { a, b } = ep;
+    const curPx = Math.sqrt((b.x-a.x)**2 + (b.y-a.y)**2);
+    if (curPx < 1) return;
+    const delta = targetPx - curPx;
+    car.x += (b.x-a.x)/curPx * delta;
+    car.y += (b.y-a.y)/curPx * delta;
+    return;
+  }
+
+  if (obj.type === 'size-mark') {
+    const car = objects.find(o => o.id === obj.carId);
+    if (!car || car.constraintLocked) return;
+    const cx = car.x + car.w/2, cy = car.y + car.h/2;
+    if (obj.axis === 'length') {
+      car.w = targetPx;
+      car.x = cx - car.w/2;
+    } else {
+      car.h = targetPx;
+      car.y = cy - car.h/2;
+    }
+  }
 }
 
 function drawRefPoint(ctx, x, y, w, h, color, thickness, style) {
@@ -6815,6 +6932,11 @@ function cmdImport() {
         }
       });
       _migrateA123Freetext();
+      if (data.scale > 0) {
+        _scale = data.scale;
+        const sd = document.getElementById('scale-display');
+        if (sd) sd.textContent = '1:' + _scale;
+      }
       selectedObjs = []; syncSel();
       setProj(data.name || file.name.replace(/\.json$/i, ''));
       composite(); renderLayers(); clearDirty();
@@ -7043,6 +7165,7 @@ function doSave() {
   const data = {
     name: n,
     savedAt: new Date().toISOString(),
+    scale: _scale,
     activeIdx,
     objects: objects.map(o => ({...o})),
     layers: layers.map(l => ({
@@ -7122,6 +7245,11 @@ async function doOpen() {
     }
   });
   _migrateA123Freetext();
+  if (data.scale > 0) {
+    _scale = data.scale;
+    const sd = document.getElementById('scale-display');
+    if (sd) sd.textContent = '1:' + _scale;
+  }
   selectedObjs = []; syncSel();
   setProj(data.name);
   composite(); renderLayers(); clearDirty();
