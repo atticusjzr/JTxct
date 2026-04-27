@@ -134,7 +134,7 @@ function composite() {
   dCtx.clearRect(0, 0, W + 2*CANVAS_MARGIN, H + 2*CANVAS_MARGIN);
   dCtx.save();
   dCtx.translate(CANVAS_MARGIN, CANVAS_MARGIN);
-  // Pass 1: draw everything except dimlines and reflines (lines are layer-independent)
+  // Pass 1: draw everything except dimlines
   for (const l of layers) {
     if (!l.visible) continue;
     dCtx.save();
@@ -147,28 +147,33 @@ function composite() {
       dCtx.drawImage(l.canvas, 0, 0);
     }
     for (const obj of objects) {
-      if (obj.layerId === l.id && obj.type !== 'dimline' && obj.type !== 'refline') drawObjOnCtx(dCtx, obj);
+      if (obj.layerId === l.id && obj.type !== 'dimline') drawObjOnCtx(dCtx, obj);
     }
     dCtx.restore();
   }
-  // Orphan objects (no layerId or layer deleted — backward compat), excluding lines
+  // Orphan objects (no layerId or layer deleted — backward compat), excluding dimlines
   dCtx.globalAlpha = 1;
   const layerIds = new Set(layers.map(l => l.id));
   for (const obj of objects) {
-    if ((!obj.layerId || !layerIds.has(obj.layerId)) && obj.type !== 'dimline' && obj.type !== 'refline') drawObjOnCtx(dCtx, obj);
-  }
-  // Always draw all reflines regardless of layer visibility
-  for (const obj of objects) {
-    if (obj.type === 'refline') drawObjOnCtx(dCtx, obj);
+    if ((!obj.layerId || !layerIds.has(obj.layerId)) && obj.type !== 'dimline') drawObjOnCtx(dCtx, obj);
   }
   // Capture pixel data for dimline autoAdapt scanning
   if (hasDimlines) {
     _dimlineImgData = dCtx.getImageData(0, 0, dc.width, dc.height);
   }
-  // Pass 2: always draw all dimlines regardless of layer visibility
+  // Pass 2: draw dimlines on top
+  for (const l of layers) {
+    if (!l.visible) continue;
+    dCtx.save();
+    dCtx.globalAlpha = l.opacity;
+    for (const obj of objects) {
+      if (obj.layerId === l.id && obj.type === 'dimline') drawObjOnCtx(dCtx, obj);
+    }
+    dCtx.restore();
+  }
   dCtx.globalAlpha = 1;
   for (const obj of objects) {
-    if (obj.type === 'dimline') drawObjOnCtx(dCtx, obj);
+    if ((!obj.layerId || !layerIds.has(obj.layerId)) && obj.type === 'dimline') drawObjOnCtx(dCtx, obj);
   }
   // Draw pending dimline preview
   if (pendingDimline && _dimlinePt) {
@@ -2083,7 +2088,7 @@ function hideRubberOverlay() {
 // ── 找出與矩形相交的物件索引 ─────────────────────────────
 function objsInRect(rx, ry, rw, rh) {
   return objects.reduce((acc, obj, i) => {
-    if (isLayerLocked(obj.layerId) && !isLineType(obj.type)) return acc;
+    if (isLayerLocked(obj.layerId)) return acc;
     const cs = getCorners(obj);
     const minX = Math.min(...cs.map(c => c.x));
     const maxX = Math.max(...cs.map(c => c.x));
@@ -2860,7 +2865,7 @@ function toggleVis(idx) {
   layers[idx].visible = !layers[idx].visible;
   if (!layers[idx].visible) {
     const lid = layers[idx].id;
-    selectedObjs = selectedObjs.filter(i => objects[i]?.layerId !== lid || isLineType(objects[i].type));
+    selectedObjs = selectedObjs.filter(i => objects[i]?.layerId !== lid);
     syncSel();
   }
   composite(); renderLayers(); markDirty();
@@ -2879,7 +2884,7 @@ function toggleLock(idx) {
   layers[idx].locked = !layers[idx].locked;
   if (layers[idx].locked) {
     const lid = layers[idx].id;
-    selectedObjs = selectedObjs.filter(i => objects[i]?.layerId !== lid || isLineType(objects[i].type));
+    selectedObjs = selectedObjs.filter(i => objects[i]?.layerId !== lid);
     syncSel();
   }
   composite(); renderLayers(); markDirty();
@@ -2889,7 +2894,6 @@ function isLayerLocked(layerId) {
   const l = layers.find(l => l.id === layerId);
   return l ? (!!l.locked || !l.visible) : false;
 }
-function isLineType(type) { return type === 'refline' || type === 'dimline'; }
 
 function toggleSpecialLayerPicker(e) {
   e.stopPropagation();
@@ -3252,7 +3256,7 @@ function onDown(e) {
       let found = -1;
       let foundPM = -1;
       for (let i = objects.length - 1; i >= 0; i--) {
-        if (isLayerLocked(objects[i].layerId) && !isLineType(objects[i].type)) continue;
+        if (isLayerLocked(objects[i].layerId)) continue;
         if (objects[i].type === 'position-mark') {
           if (foundPM < 0 && ptOnPositionMark(pt, objects[i])) foundPM = i;
           continue;
@@ -4353,7 +4357,7 @@ function showCtxMenu(e) {
   let hitPM  = -1;
   for (let i = objects.length - 1; i >= 0; i--) {
     const o = objects[i];
-    if (isLayerLocked(o.layerId) && !isLineType(o.type)) continue;
+    if (isLayerLocked(o.layerId)) continue;
     if (o.type === 'position-mark') {
       if (hitPM < 0 && ptOnPositionMark(pt, o)) hitPM = i;
       continue;
