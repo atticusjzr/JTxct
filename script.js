@@ -72,6 +72,9 @@ let turnEditMode   = null; // 'turn-rot' | 'turn-a1m' | 'turn-cor' | null
 let rotLabelObjIdx = -1;   // which object's label is currently shown (-1 = none)
 let pendingRefline    = null; // { x1,y1,color,thickness,layerId,refpointId } – click-to-place mode
 let linkedReflineOrig = null; // { idx,x1,y1,x2,y2 } – captured when dragging a refpoint
+let pendingDimline    = null; // { rotation } – dimline placement mode
+let _dimlinePt        = null; // current cursor position during dimline placement
+let _dimlineImgData   = null; // cached pixel data before drawing dimlines (for autoAdapt scan)
 let _dcRect        = null; // cached canvas bounding rect (set in applyZoom + onDown)
 let _specialEditIdx = -1;  // declared early to avoid TDZ when applyZoom() runs at init
 let _seoFocusedKey = null;
@@ -127,9 +130,11 @@ function updateRefpointBtn() {
 
 function composite() {
   if (!dCtx) return;
+  const hasDimlines = objects.some(o => o.type === 'dimline') || !!pendingDimline;
   dCtx.clearRect(0, 0, W + 2*CANVAS_MARGIN, H + 2*CANVAS_MARGIN);
   dCtx.save();
   dCtx.translate(CANVAS_MARGIN, CANVAS_MARGIN);
+  // Pass 1: draw everything except dimlines
   for (const l of layers) {
     if (!l.visible) continue;
     dCtx.save();
@@ -142,15 +147,46 @@ function composite() {
       dCtx.drawImage(l.canvas, 0, 0);
     }
     for (const obj of objects) {
-      if (obj.layerId === l.id) drawObjOnCtx(dCtx, obj);
+      if (obj.layerId === l.id && obj.type !== 'dimline') drawObjOnCtx(dCtx, obj);
     }
     dCtx.restore();
   }
-  // Orphan objects (no layerId or layer deleted — backward compat)
+  // Orphan objects (no layerId or layer deleted — backward compat), excluding dimlines
   dCtx.globalAlpha = 1;
   const layerIds = new Set(layers.map(l => l.id));
   for (const obj of objects) {
-    if (!obj.layerId || !layerIds.has(obj.layerId)) drawObjOnCtx(dCtx, obj);
+    if ((!obj.layerId || !layerIds.has(obj.layerId)) && obj.type !== 'dimline') drawObjOnCtx(dCtx, obj);
+  }
+  // Capture pixel data for dimline autoAdapt scanning
+  if (hasDimlines) {
+    _dimlineImgData = dCtx.getImageData(0, 0, dc.width, dc.height);
+  }
+  // Pass 2: draw dimlines on top
+  for (const l of layers) {
+    if (!l.visible) continue;
+    dCtx.save();
+    dCtx.globalAlpha = l.opacity;
+    for (const obj of objects) {
+      if (obj.layerId === l.id && obj.type === 'dimline') drawObjOnCtx(dCtx, obj);
+    }
+    dCtx.restore();
+  }
+  dCtx.globalAlpha = 1;
+  for (const obj of objects) {
+    if ((!obj.layerId || !layerIds.has(obj.layerId)) && obj.type === 'dimline') drawObjOnCtx(dCtx, obj);
+  }
+  // Draw pending dimline preview
+  if (pendingDimline && _dimlinePt) {
+    const previewObj = {
+      type: 'dimline', cx: _dimlinePt.x, cy: _dimlinePt.y,
+      rotation: pendingDimline.rotation, maxLen: H,
+      autoAdapt: true, fixedLen: null,
+      color: '#e53935', thickness: 1.5,
+    };
+    dCtx.save();
+    dCtx.globalAlpha = 0.75;
+    drawDimline(dCtx, previewObj);
+    dCtx.restore();
   }
   if (tool === 'select') {
     if (selectedObjs.length === 1 && objects[selectedObjs[0]]) {
@@ -181,6 +217,217 @@ function composite() {
     dCtx.restore();
   }
   dCtx.restore();
+}
+
+// ── Dimline helpers ──────────────────────────────────────────
+function syncDimlineBBox(obj) {
+  const halfMax = (obj.maxLen || H) / 2 + 20;
+  const absCos = Math.abs(Math.cos(obj.rotation || 0));
+  const absSin = Math.abs(Math.sin(obj.rotation || 0));
+  obj.x = obj.cx - halfMax * Math.max(absCos, 0.05);
+  obj.y = obj.cy - halfMax * Math.max(absSin, 0.05);
+  obj.w = halfMax * Math.max(absCos, 0.05) * 2;
+  obj.h = halfMax * Math.max(absSin, 0.05) * 2;
+  if (obj.w < 30) { obj.x -= (30 - obj.w) / 2; obj.w = 30; }
+  if (obj.h < 30) { obj.y -= (30 - obj.h) / 2; obj.h = 30; }
+}
+
+function getDimlineEndpoints(obj) {
+  const halfMax = (obj.maxLen || H) / 2;
+  const rot = obj.rotation || 0;
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  let leftLen = halfMax, rightLen = halfMax;
+
+  if (obj.autoAdapt !== false) {
+    const THR = 25, skip = 3;
+    const isHoriz = Math.abs(sin) < 0.01;
+    const isVert  = Math.abs(cos) < 0.01;
+
+    if (isHoriz || isVert) {
+      let strip;
+      if (isHoriz) {
+        const sy = Math.round(obj.cy + CANVAS_MARGIN);
+        if (sy >= 0 && sy < dc.height) {
+          strip = dCtx.getImageData(0, sy, dc.width, 1).data;
+        }
+      } else {
+        const sx = Math.round(obj.cx + CANVAS_MARGIN);
+        if (sx >= 0 && sx < dc.width) {
+          strip = dCtx.getImageData(sx, 0, 1, dc.height).data;
+        }
+      }
+      if (strip) {
+        if (isHoriz) {
+          for (let t = skip; t <= halfMax; t++) {
+            const ix = Math.round(obj.cx + t + CANVAS_MARGIN);
+            if (ix < 0 || ix >= dc.width) { rightLen = t; break; }
+            if (strip[ix * 4 + 3] > THR) { rightLen = t - 1; break; }
+          }
+          for (let t = skip; t <= halfMax; t++) {
+            const ix = Math.round(obj.cx - t + CANVAS_MARGIN);
+            if (ix < 0 || ix >= dc.width) { leftLen = t; break; }
+            if (strip[ix * 4 + 3] > THR) { leftLen = t - 1; break; }
+          }
+        } else {
+          const signSin = sin > 0 ? 1 : -1;
+          for (let t = skip; t <= halfMax; t++) {
+            const iy = Math.round(obj.cy + t * signSin + CANVAS_MARGIN);
+            if (iy < 0 || iy >= dc.height) { rightLen = t; break; }
+            if (strip[iy * 4 + 3] > THR) { rightLen = t - 1; break; }
+          }
+          for (let t = skip; t <= halfMax; t++) {
+            const iy = Math.round(obj.cy - t * signSin + CANVAS_MARGIN);
+            if (iy < 0 || iy >= dc.height) { leftLen = t; break; }
+            if (strip[iy * 4 + 3] > THR) { leftLen = t - 1; break; }
+          }
+        }
+      }
+    } else if (_dimlineImgData) {
+      const iw = _dimlineImgData.width, ih = _dimlineImgData.height;
+      const pd = _dimlineImgData.data;
+      for (let t = skip; t <= halfMax; t++) {
+        const ix = Math.round(obj.cx + t * cos + CANVAS_MARGIN);
+        const iy = Math.round(obj.cy + t * sin + CANVAS_MARGIN);
+        if (ix < 0 || iy < 0 || ix >= iw || iy >= ih) { rightLen = t; break; }
+        if (pd[(iy * iw + ix) * 4 + 3] > THR) { rightLen = t - 1; break; }
+      }
+      for (let t = skip; t <= halfMax; t++) {
+        const ix = Math.round(obj.cx - t * cos + CANVAS_MARGIN);
+        const iy = Math.round(obj.cy - t * sin + CANVAS_MARGIN);
+        if (ix < 0 || iy < 0 || ix >= iw || iy >= ih) { leftLen = t; break; }
+        if (pd[(iy * iw + ix) * 4 + 3] > THR) { leftLen = t - 1; break; }
+      }
+    }
+  } else {
+    const fl = obj.fixedLen || halfMax * 2;
+    leftLen = rightLen = fl / 2;
+  }
+
+  leftLen = Math.max(0, leftLen);
+  rightLen = Math.max(0, rightLen);
+  return {
+    x1: obj.cx - leftLen * cos, y1: obj.cy - leftLen * sin,
+    x2: obj.cx + rightLen * cos, y2: obj.cy + rightLen * sin,
+    length: Math.round(leftLen + rightLen)
+  };
+}
+
+function drawDimline(ctx, obj) {
+  const ep = getDimlineEndpoints(obj);
+  const dx = ep.x2 - ep.x1, dy = ep.y2 - ep.y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1) return;
+
+  const color = obj.color || '#e53935';
+  const thickness = obj.thickness || 1.5;
+  const nx = dx / len, ny = dy / len; // unit vector along line
+  const px = -ny, py = nx; // perpendicular
+
+  // Arrowhead size
+  const AH = Math.max(8, Math.min(16, len * 0.08));
+  const AW = AH * 0.45;
+  const TICK = 10; // tick height in world px
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = thickness;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.setLineDash([]);
+
+  // Main shaft (between arrowhead bases)
+  ctx.beginPath();
+  ctx.moveTo(ep.x1 + nx * AH, ep.y1 + ny * AH);
+  ctx.lineTo(ep.x2 - nx * AH, ep.y2 - ny * AH);
+  ctx.stroke();
+
+  // Left arrowhead (pointing outward from center = toward x1)
+  ctx.beginPath();
+  ctx.moveTo(ep.x1, ep.y1);
+  ctx.lineTo(ep.x1 + nx * AH + px * AW, ep.y1 + ny * AH + py * AW);
+  ctx.lineTo(ep.x1 + nx * AH - px * AW, ep.y1 + ny * AH - py * AW);
+  ctx.closePath();
+  ctx.fill();
+
+  // Right arrowhead (pointing outward = toward x2)
+  ctx.beginPath();
+  ctx.moveTo(ep.x2, ep.y2);
+  ctx.lineTo(ep.x2 - nx * AH + px * AW, ep.y2 - ny * AH + py * AW);
+  ctx.lineTo(ep.x2 - nx * AH - px * AW, ep.y2 - ny * AH - py * AW);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tick marks at each end
+  const TICK_HALF = TICK / 2;
+  ctx.lineWidth = thickness;
+  ctx.beginPath();
+  ctx.moveTo(ep.x1 + px * TICK_HALF, ep.y1 + py * TICK_HALF);
+  ctx.lineTo(ep.x1 - px * TICK_HALF, ep.y1 - py * TICK_HALF);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(ep.x2 + px * TICK_HALF, ep.y2 + py * TICK_HALF);
+  ctx.lineTo(ep.x2 - px * TICK_HALF, ep.y2 - py * TICK_HALF);
+  ctx.stroke();
+
+  // Center dot (when autoAdapt is on)
+  if (obj.autoAdapt !== false) {
+    ctx.beginPath();
+    ctx.arc(obj.cx, obj.cy, thickness + 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Label at midpoint
+  const mx = (ep.x1 + ep.x2) / 2, my = (ep.y1 + ep.y2) / 2;
+  const labelText = ep.length + 'px';
+  const fontSize = Math.max(10, Math.min(14, len * 0.07));
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  const tw = ctx.measureText(labelText).width;
+  const LABEL_OFFSET = TICK_HALF + 4 + fontSize / 2;
+  const lx = mx + px * LABEL_OFFSET, ly = my + py * LABEL_OFFSET;
+
+  // White background
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  const PAD = 2;
+  ctx.fillRect(lx - tw / 2 - PAD, ly - fontSize / 2 - PAD, tw + PAD * 2, fontSize + PAD * 2);
+
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(labelText, lx, ly);
+
+  ctx.restore();
+}
+
+function ptOnDimline(pt, obj) {
+  const ep = getDimlineEndpoints(obj);
+  const r = Math.max(6, 8 / zoom);
+  return ptNearSeg(pt, ep.x1, ep.y1, ep.x2, ep.y2, r);
+}
+
+function drawDimlineHandles(ctx, obj) {
+  const ep = getDimlineEndpoints(obj);
+  const hr = 5 / zoom, lw = 1.5 / zoom;
+  ctx.save();
+  ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw;
+  ctx.setLineDash([4/zoom, 3/zoom]);
+  ctx.beginPath(); ctx.moveTo(ep.x1, ep.y1); ctx.lineTo(ep.x2, ep.y2);
+  ctx.stroke(); ctx.setLineDash([]);
+  // Center move handle
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#42a5f5';
+  ctx.beginPath(); ctx.arc(obj.cx, obj.cy, hr * 1.2, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  // Rotation handle (perpendicular above line)
+  const rot = obj.rotation || 0;
+  const rh = { x: obj.cx + Math.cos(rot - Math.PI / 2) * 28 / zoom,
+               y: obj.cy + Math.sin(rot - Math.PI / 2) * 28 / zoom };
+  ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw;
+  ctx.setLineDash([3/zoom, 3/zoom]);
+  ctx.beginPath(); ctx.moveTo(obj.cx, obj.cy); ctx.lineTo(rh.x, rh.y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#4caf50'; ctx.strokeStyle = '#fff';
+  ctx.beginPath(); ctx.arc(rh.x, rh.y, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.restore();
 }
 
 // ── Rotation angle label ──────────────────────────────────
@@ -368,7 +615,7 @@ function drawVehicle(ctx, x, y, w, h, clr, type) {
 function drawObjOnCtx(ctx, obj) {
   ctx.save();
   if (obj.opacity !== undefined && obj.opacity < 1) ctx.globalAlpha *= obj.opacity;
-  const _noObjTx = obj.type === 'marking-turn' || obj.type === 'marking-chanl' || obj.type === 'refline' || obj.type === 'reflabel' || obj.type === 'freetext';
+  const _noObjTx = obj.type === 'marking-turn' || obj.type === 'marking-chanl' || obj.type === 'refline' || obj.type === 'reflabel' || obj.type === 'freetext' || obj.type === 'dimline';
   if (!_noObjTx && (obj.rotation || obj.flipH || obj.flipV)) {
     const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
     ctx.translate(cx, cy);
@@ -426,6 +673,8 @@ function drawObjOnCtx(ctx, obj) {
     drawFreeText(ctx, obj);
   } else if (obj.type === 'image') {
     drawImageObj(ctx, obj);
+  } else if (obj.type === 'dimline') {
+    drawDimline(ctx, obj);
   } else if (obj.type.startsWith('marking-')) {
     drawMarkingDblSolid(ctx, obj.x, obj.y, obj.w, obj.h, obj.color || '#f9c400');
   } else {
@@ -436,6 +685,9 @@ function drawObjOnCtx(ctx, obj) {
 
 // ── Geometry helpers ─────────────────────────────────────
 function getCorners(obj) {
+  if (obj.type === 'dimline') {
+    return [{x:obj.x,y:obj.y},{x:obj.x+obj.w,y:obj.y},{x:obj.x+obj.w,y:obj.y+obj.h},{x:obj.x,y:obj.y+obj.h}];
+  }
   const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
   const cos = Math.cos(obj.rotation), sin = Math.sin(obj.rotation);
   const hw = obj.w / 2, hh = obj.h / 2;
@@ -471,6 +723,7 @@ function dist2(a, b) { return (a.x-b.x)**2 + (a.y-b.y)**2; }
 
 function ptInObj(pt, obj) {
   if (obj.type === 'refline') return ptOnRefLine(pt, obj);
+  if (obj.type === 'dimline') return ptOnDimline(pt, obj);
   const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
   const cos = Math.cos(-obj.rotation), sin = Math.sin(-obj.rotation);
   const dx = pt.x - cx, dy = pt.y - cy;
@@ -481,6 +734,14 @@ function ptInObj(pt, obj) {
 
 function hitHandle(pt, obj) {
   const hr = 9 / zoom;
+  if (obj.type === 'dimline') {
+    const rot = obj.rotation || 0;
+    const rh = { x: obj.cx + Math.cos(rot - Math.PI/2) * 28/zoom,
+                 y: obj.cy + Math.sin(rot - Math.PI/2) * 28/zoom };
+    if (dist2(pt, rh) <= (9/zoom)**2) return { type: 'rotate' };
+    if (ptOnDimline(pt, obj)) return { type: 'move' };
+    return null;
+  }
   if (obj.type === 'refline')   return hitReflineHandle(pt, obj);
   if (obj.type === 'reflabel')  return ptInObj(pt, obj) ? { type: 'reflabel-orbit' } : null;
   if (obj.type === 'marking-turn') {
@@ -515,6 +776,7 @@ function drawSelHandles(ctx, obj) {
   if (obj.type === 'marking-turn') { drawTurnHandles(ctx, obj); ctx.restore(); return; }
   if (obj.type === 'marking-chanl') { drawChanlHandles(ctx, obj); ctx.restore(); return; }
   if (obj.type === 'refline')      { drawReflineHandles(ctx, obj); ctx.restore(); return; }
+  if (obj.type === 'dimline') { drawDimlineHandles(ctx, obj); ctx.restore(); return; }
   if (obj.type === 'position-mark') {
     const ep = _posMarkEndpoints(obj);
     if (ep) {
@@ -1549,8 +1811,8 @@ function hitGroupCorner(pt) {
 // ── 多選群組外框（含角點把手）────────────────────────────
 // ── Smart guide lines ────────────────────────────────────
 function _getObjAABB(obj) {
-  // refline, turn, chanl: x/y/w/h is already an AABB
-  if (obj.type === 'refline' || obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
+  // refline, turn, chanl, dimline: x/y/w/h is already an AABB
+  if (obj.type === 'refline' || obj.type === 'marking-turn' || obj.type === 'marking-chanl' || obj.type === 'dimline') {
     if (!obj.w || !obj.h) return null;
     return { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
   }
@@ -1827,6 +2089,7 @@ const OBJ_TYPE_NAMES = {
   'marking-rect':'實色矩形', 'marking-text':'標字',
   'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-sepisle':'分隔島', 'marking-chanl':'槽化線',
   'freetext': '文字', 'image': '圖片',
+  'dimline': '尺寸線',
 };
 
 function updatePropsPanel() {
@@ -1960,6 +2223,13 @@ function updatePropsPanel() {
       rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-mcolor" value="${m.color||'#e53935'}" oninput="propMeasureColor(this.value)" onchange="saveSnap('尺標顏色')"></div>`);
       rows.push(`<div class="prop-row"><label>大小</label><input type="number" id="pr-msize" min="8" max="48" value="${m.size||11}" onchange="propMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
     }
+  }
+
+  // Dimline properties
+  if (t === 'dimline') {
+    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" id="pr-color" value="${obj.color||'#e53935'}" oninput="propSetColor(this.value)" onchange="saveSnap('尺寸線顏色')"></div>`);
+    rows.push(`<div class="prop-row"><label>粗細</label><input type="range" min="0.5" max="6" step="0.5" value="${obj.thickness||1.5}" oninput="propSetThicknessLive(this.value)" onchange="saveSnap('尺寸線粗細')"><span class="prop-val">${obj.thickness||1.5}px</span></div>`);
+    rows.push(`<div class="prop-row"><label>自動偵測</label><input type="checkbox" ${obj.autoAdapt!==false?'checked':''} onchange="propDimlineAutoAdapt(this.checked)"><span style="font-size:11px;color:var(--dim);margin-left:4px">${obj.autoAdapt!==false?'開啟（右鍵可關閉）':'關閉（右鍵可開啟）'}</span></div>`);
   }
 
   // Moto variant
@@ -2134,6 +2404,14 @@ function propSetThicknessLive(v) {
 function propSetDash(v) {
   const o = _propObj(); if (!o) return;
   o.dash = v; composite(); markDirty(); saveSnap('虛線');
+}
+function propDimlineAutoAdapt(v) {
+  const obj = _propObj();
+  if (!obj || obj.type !== 'dimline') return;
+  if (!v) { const ep = getDimlineEndpoints(obj); obj.fixedLen = ep.length; }
+  obj.autoAdapt = v;
+  composite(); markDirty(); saveSnap('尺寸線自動偵測');
+  updatePropsPanel();
 }
 function propMeasureShow(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
 function propMeasureText(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.text=v;composite();markDirty();} }
@@ -2841,6 +3119,25 @@ function onDown(e) {
     return;
   }
 
+  // Commit pending dimline on click
+  if (pendingDimline) {
+    if (e.button === 2) { pendingDimline = null; _dimlinePt = null; composite(); return; }
+    if (e.button !== 0) return;
+    const obj = {
+      type: 'dimline', cx: pt.x, cy: pt.y,
+      rotation: pendingDimline.rotation, maxLen: H,
+      autoAdapt: true, fixedLen: null,
+      color: '#e53935', thickness: 1.5,
+      layerId: layers[activeIdx].id,
+      x: 0, y: 0, w: 0, h: 0
+    };
+    syncDimlineBBox(obj);
+    objects.push(obj);
+    selectedObjs = [objects.length - 1]; syncSel();
+    composite(); markDirty(); saveSnap('新增尺寸線');
+    return;
+  }
+
   // A1/A2/A3 radio buttons: clickable in any tool mode
   if (e.button === 0) {
     const _activeL = layers[activeIdx];
@@ -2968,9 +3265,13 @@ function onDown(e) {
           anchorWorld = getMidpoints(orig)[(hit.idx + 2) % 4];
         } else if (hit.type === 'rotate') {
           selectState = 'rotate';
-          const cx = orig.x + orig.w / 2, cy = orig.y + orig.h / 2;
-          rotPrevAngle = Math.atan2(pt.y - cy, pt.x - cx);
-          if (orig.type !== 'marking-turn' && orig.type !== 'marking-chanl') showRotLabel(orig);
+          if (orig.type === 'dimline') {
+            rotPrevAngle = Math.atan2(pt.y - orig.cy, pt.x - orig.cx) + Math.PI / 2;
+          } else {
+            const cx = orig.x + orig.w / 2, cy = orig.y + orig.h / 2;
+            rotPrevAngle = Math.atan2(pt.y - cy, pt.x - cx);
+          }
+          if (orig.type !== 'marking-turn' && orig.type !== 'marking-chanl' && orig.type !== 'dimline') showRotLabel(orig);
         } else if (hit.type === 'refline-p2') {
           selectState = hit.type;
         } else if (hit.type === 'refline-p1') {
@@ -3104,6 +3405,12 @@ function onMove(e) {
     return;
   }
 
+  if (pendingDimline) {
+    _dimlinePt = getPos(e);
+    composite();
+    return;
+  }
+
   if (tool === 'select') {
     const pt = getPos(e);
 
@@ -3197,6 +3504,11 @@ function onMove(e) {
         if (objects[idx].type === 'marking-turn' || objects[idx].type === 'marking-chanl') {
           objects[idx].cx = orig.cx + dx;
           objects[idx].cy = orig.cy + dy;
+        }
+        if (objects[idx].type === 'dimline') {
+          objects[idx].cx = orig.cx + dx;
+          objects[idx].cy = orig.cy + dy;
+          syncDimlineBBox(objects[idx]);
         }
       });
       // Move linked refline together with its refpoint
@@ -3296,12 +3608,23 @@ function onMove(e) {
       _computeResizeGuides();
     } else if (selectState === 'rotate') {
       const orig = selectObjOrig[0];
+      const obj = objects[selectedObjs[0]];
+      // Dimline rotation: rotate around its own center
+      if (obj.type === 'dimline') {
+        const currAngle = Math.atan2(pt.y - obj.cy, pt.x - obj.cx) + Math.PI / 2;
+        let delta = currAngle - rotPrevAngle;
+        if (delta >  Math.PI) delta -= 2 * Math.PI;
+        if (delta < -Math.PI) delta += 2 * Math.PI;
+        obj.rotation = (obj.rotation || 0) + delta;
+        syncDimlineBBox(obj);
+        rotPrevAngle = currAngle;
+        composite(); return;
+      }
       const cx = orig.x + orig.w / 2, cy = orig.y + orig.h / 2;
       const currAngle = Math.atan2(pt.y - cy, pt.x - cx);
       let delta = currAngle - rotPrevAngle;
       if (delta >  Math.PI) delta -= 2 * Math.PI;
       if (delta < -Math.PI) delta += 2 * Math.PI;
-      const obj = objects[selectedObjs[0]];
       if (obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
         const cos = Math.cos(delta), sin = Math.sin(delta);
         const dcx = orig.cx - cx, dcy = orig.cy - cy;
@@ -3795,6 +4118,9 @@ function cmdSnapToAxis() {
       obj.a1x = v1.x; obj.a1y = v1.y;
       obj.a2x = v2.x; obj.a2y = v2.y;
       syncTurnBBox(obj);
+    } else if (obj.type === 'dimline') {
+      obj.rotation = snapAngle(obj.rotation || 0);
+      syncDimlineBBox(obj);
     } else if (obj.rotation !== undefined) {
       obj.rotation = snapAngle(obj.rotation || 0);
     }
@@ -3847,8 +4173,13 @@ function setTool(t) {
   if (t !== 'select') { selectedObjs = []; syncSel(); }
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('btn-' + t)?.classList.add('active');
-  const cursors = { brush:'crosshair', eraser:'cell', car:'crosshair', moto:'crosshair', marking:'crosshair', 'marking-text':'crosshair', select:'default', hand:'grab' };
+  const cursors = { brush:'crosshair', eraser:'cell', car:'crosshair', moto:'crosshair', marking:'crosshair', 'marking-text':'crosshair', select:'default', hand:'grab', 'dimline-h':'none', 'dimline-v':'none' };
   dc.style.cursor = cursors[t] || 'crosshair';
+  if (t !== 'dimline-h' && t !== 'dimline-v') {
+    pendingDimline = null; _dimlinePt = null;
+  } else {
+    pendingDimline = { rotation: t === 'dimline-h' ? 0 : Math.PI / 2 };
+  }
   composite();
 }
 
@@ -3985,6 +4316,22 @@ function showCtxMenu(e) {
   if (hitIdx >= 0 && !selectedObjs.includes(hitIdx)) {
     selectedObjs = [hitIdx]; syncSel();
     if (tool !== 'select') setTool('select'); else composite();
+  }
+
+  // Right-click on dimline: toggle autoAdapt (don't show context menu)
+  if (hitIdx >= 0 && objects[hitIdx]?.type === 'dimline') {
+    const obj = objects[hitIdx];
+    if (obj.autoAdapt !== false) {
+      const ep = getDimlineEndpoints(obj);
+      obj.fixedLen = ep.length;
+      obj.autoAdapt = false;
+    } else {
+      obj.autoAdapt = true;
+    }
+    markDirty(); saveSnap('尺寸線自動偵測');
+    composite();
+    e.preventDefault();
+    return;
   }
 
   const hasObj = selectedObjs.length > 0;
@@ -6130,7 +6477,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && tool === 'select' && selectedObjs.length > 0) {
     e.preventDefault(); ctxDelete();
   }
-  if (e.key === 'Escape') { if (pendingRefline) { cancelPendingRefline(); return; } closeModal(); }
+  if (e.key === 'Escape') { if (pendingRefline) { cancelPendingRefline(); return; } if (pendingDimline) { pendingDimline = null; _dimlinePt = null; composite(); return; } closeModal(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); cmdSave(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }

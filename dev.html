@@ -112,6 +112,11 @@
     <div class="tdiv"></div>
     <button class="tool-btn" id="btn-freetext" onclick="setTool('freetext')" title="文字 (T)"><b style="font-size:15px">T</b></button>
     <div class="tdiv"></div>
+    <div id="dimline-tool-wrap">
+      <button class="tool-btn" id="btn-dimline-h" onclick="setTool('dimline-h')" title="水平尺寸線">↔</button>
+      <button class="tool-btn" id="btn-dimline-v" onclick="setTool('dimline-v')" title="垂直尺寸線" style="margin-top:2px">↕</button>
+    </div>
+    <div class="tdiv"></div>
     <div id="color-wrap" title="選色">
       <div id="color-swatch"></div>
       <input type="color" id="color-input" value="#000000" oninput="setColor(this.value)">
