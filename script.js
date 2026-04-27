@@ -3701,9 +3701,15 @@ function onDown(e) {
         const orig = selectObjOrig[0];
         if (hit.type === 'corner') {
           selectState = 'resize'; selectCorner = hit.idx;
+          _lockDragInfo = null;
           if (CAR_TYPES.has(orig.type) || MOTO_TYPES.has(orig.type)) {
             const lck = _getLockedCornerInfo(orig);
-            anchorWorld = lck.length === 1 ? { x: lck[0].worldX, y: lck[0].worldY } : getCorners(orig)[(hit.idx + 2) % 4];
+            if (lck.length === 1) {
+              anchorWorld = { x: lck[0].worldX, y: lck[0].worldY };
+              _lockDragInfo = { fixedPt: { x: lck[0].worldX, y: lck[0].worldY }, localX: lck[0].localX, localY: lck[0].localY };
+            } else {
+              anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
+            }
           } else {
             anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
           }
@@ -4103,6 +4109,15 @@ function onMove(e) {
         resizeMarkingLength(obj, selectCorner === 1 || selectCorner === 2, pt.x, pt.y, true);
       } else {
         resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
+      }
+      // After resize, re-anchor locked body corner to its original world position
+      if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
+        const ld = _lockDragInfo, orig0 = selectObjOrig[0];
+        const lxS = ld.localX * obj.w / orig0.w;
+        const lyS = ld.localY * obj.h / orig0.h;
+        const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
+        obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
+        obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
       }
       _computeResizeGuides();
     } else if (selectState === 'edge') {
