@@ -7464,6 +7464,44 @@ function _applyConstraint(obj, val) {
     const curPx = Math.sqrt((c.x-f.x)**2 + (c.y-f.y)**2);
     if (curPx < 1) return;
     const delta = targetPx - curPx;
+
+    // Priority: change car.h or car.w before translating (keeps foot spacing stable)
+    const rl_pm = objects.find(o => o.type === 'refline' && o.id === obj.reflineId);
+    if (rl_pm) {
+      computeReflineP1(rl_pm);
+      const rldx = rl_pm.x2 - rl_pm.x1, rldy = rl_pm.y2 - rl_pm.y1;
+      const rll = Math.sqrt(rldx*rldx + rldy*rldy);
+      if (rll >= 1) {
+        const nx = -rldy/rll, ny = rldx/rll;
+        const cx = car.x + car.w/2, cy = car.y + car.h/2;
+        const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+        const u_cur = cosR*nx + sinR*ny, v_cur = -sinR*nx + cosR*ny;
+        const d_ctr = (cx - rl_pm.x1)*nx + (cy - rl_pm.y1)*ny;
+        const lx1 = (c.x-cx)*cosR + (c.y-cy)*sinR;
+        const ly1 = -(c.x-cx)*sinR + (c.y-cy)*cosR;
+        const d1_tgt = targetPx * Math.sign((c.x-f.x)*nx + (c.y-f.y)*ny || 1);
+        const need = d1_tgt - d_ctr;
+        // P1: change car.h (center fixed)  d1 = d_ctr + lx1*u + ly1*(h_new/h)*v
+        if (Math.abs(ly1 * v_cur) > 1) {
+          const h_new = car.h * (need - lx1*u_cur) / (ly1 * v_cur);
+          if (h_new > car.h * 0.2 && h_new < car.h * 5) {
+            car.h = h_new;
+            car.y = cy - car.h/2;
+            return;
+          }
+        }
+        // P2: change car.w (center fixed)  d1 = d_ctr + lx1*(w_new/w)*u + ly1*v
+        if (Math.abs(lx1 * u_cur) > 1) {
+          const w_new = car.w * (need - ly1*v_cur) / (lx1 * u_cur);
+          if (w_new > car.w * 0.2 && w_new < car.w * 5) {
+            car.w = w_new;
+            car.x = cx - car.w/2;
+            return;
+          }
+        }
+      }
+    }
+    // P3: translate
     car.x += (c.x-f.x)/curPx * delta;
     car.y += (c.y-f.y)/curPx * delta;
     return;
@@ -7524,12 +7562,11 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
   const rl_dx = rl.x2 - rl.x1, rl_dy = rl.y2 - rl.y1;
   const rl_len = Math.sqrt(rl_dx*rl_dx + rl_dy*rl_dy);
   if (rl_len < 1) return;
-  const nx = -rl_dy / rl_len, ny = rl_dx / rl_len; // unit normal
+  const nx = -rl_dy / rl_len, ny = rl_dx / rl_len;
 
   const cx = car.x + car.w/2, cy = car.y + car.h/2;
   const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
 
-  // Locked corner (C0) and edited corner (C1) world + local positions
   let anch0, anch1;
   if (MOTO_TYPES.has(car.type)) { anch0 = anch1 = getMotoWheelBottoms(car); }
   else {
@@ -7539,39 +7576,61 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
   const c0 = anch0[lockedPM.cornerIdx], c1 = anch1[obj.cornerIdx];
   if (!c0 || !c1) { _showLockBlockedModal([lockedPM]); return; }
 
-  // Local positions (car frame, unrotated)
-  const lx0 = (c0.x-cx)*cosR + (c0.y-cy)*sinR,  ly0 = -(c0.x-cx)*sinR + (c0.y-cy)*cosR;
-  const lx1 = (c1.x-cx)*cosR + (c1.y-cy)*sinR,  ly1 = -(c1.x-cx)*sinR + (c1.y-cy)*cosR;
+  const lx0 = (c0.x-cx)*cosR + (c0.y-cy)*sinR, ly0 = -(c0.x-cx)*sinR + (c0.y-cy)*cosR;
+  const lx1 = (c1.x-cx)*cosR + (c1.y-cy)*sinR, ly1 = -(c1.x-cx)*sinR + (c1.y-cy)*cosR;
 
-  // Signed perpendicular distances
   const d0 = (c0.x-rl.x1)*nx + (c0.y-rl.y1)*ny;
   const d1_cur = (c1.x-rl.x1)*nx + (c1.y-rl.y1)*ny;
   const d1_target = targetPx * Math.sign(d1_cur || 1);
 
-  // Constraint: (lx1-lx0)*u + (ly1-ly0)*v = d1_target - d0  with u²+v²=1
   const dlx = lx1-lx0, dly = ly1-ly0;
   const dl_mag = Math.sqrt(dlx*dlx + dly*dly);
   if (dl_mag < 0.1) { _showLockBlockedModal([lockedPM]); return; }
 
   const rhs = d1_target - d0;
-  if (Math.abs(rhs) > dl_mag * 1.001) return; // geometrically impossible
+  const u_cur = cosR*nx + sinR*ny, v_cur = -sinR*nx + cosR*ny;
 
-  // Solve for (u,v) on unit circle satisfying the linear constraint
+  // Priority 1: change car.h (rotation & c0 fixed)
+  // d1_new = d0 + dlx*u_cur + dly*(h_new/orig_h)*v_cur  →  h_new = orig_h*(rhs-dlx*u_cur)/(dly*v_cur)
+  if (Math.abs(dly * v_cur) > dl_mag * 0.01) {
+    const h_new = car.h * (rhs - dlx * u_cur) / (dly * v_cur);
+    if (h_new > car.h * 0.2 && h_new < car.h * 5) {
+      const orig_h = car.h;
+      car.h = h_new;
+      const ly0_new = ly0 * h_new / orig_h;
+      car.x = c0.x - (lx0*cosR - ly0_new*sinR) - car.w/2;
+      car.y = c0.y - (lx0*sinR + ly0_new*cosR) - car.h/2;
+      return;
+    }
+  }
+
+  // Priority 2: change car.w (rotation & c0 fixed)
+  // d1_new = d0 + dlx*(w_new/orig_w)*u_cur + dly*v_cur  →  w_new = orig_w*(rhs-dly*v_cur)/(dlx*u_cur)
+  if (Math.abs(dlx * u_cur) > dl_mag * 0.01) {
+    const w_new = car.w * (rhs - dly * v_cur) / (dlx * u_cur);
+    if (w_new > car.w * 0.2 && w_new < car.w * 5) {
+      const orig_w = car.w;
+      car.w = w_new;
+      const lx0_new = lx0 * w_new / orig_w;
+      car.x = c0.x - (lx0_new*cosR - ly0*sinR) - car.w/2;
+      car.y = c0.y - (lx0_new*sinR + ly0*cosR) - car.h/2;
+      return;
+    }
+  }
+
+  // Priority 3: rotation solver
+  if (Math.abs(rhs) > dl_mag * 1.001) return;
   const a = dlx/dl_mag, b = dly/dl_mag;
   const proj = Math.max(-1, Math.min(1, rhs/dl_mag));
   const perp = Math.sqrt(Math.max(0, 1 - proj*proj));
 
-  const u_cur = cosR*nx + sinR*ny, v_cur = -sinR*nx + cosR*ny;
   const u1 = proj*a - perp*b, v1 = proj*b + perp*a;
   const u2 = proj*a + perp*b, v2 = proj*b - perp*a;
   const usePick1 = (u1-u_cur)**2+(v1-v_cur)**2 <= (u2-u_cur)**2+(v2-v_cur)**2;
   const u_new = usePick1 ? u1 : u2, v_new = usePick1 ? v1 : v2;
 
-  // Recover rotation from (u,v): [cosR,sinR] = [[nx,-ny],[ny,nx]]*[u,v]
   const cosR_new = nx*u_new - ny*v_new, sinR_new = ny*u_new + nx*v_new;
   car.rotation = Math.atan2(sinR_new, cosR_new);
-
-  // Reposition car so C0 stays at its current world position
   car.x = c0.x - (lx0*cosR_new - ly0*sinR_new) - car.w/2;
   car.y = c0.y - (lx0*sinR_new + ly0*cosR_new) - car.h/2;
 }
