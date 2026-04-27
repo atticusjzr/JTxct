@@ -2874,8 +2874,20 @@ function _posSegFeet(obj) {
     const t = rlLen2 > 0 ? ((f.x-rl.x1)*rlDx + (f.y-rl.y1)*rlDy) / rlLen2 : 0;
     return { f, t };
   }).sort((a, b) => a.t - b.t);
+  if (obj.segIdx === 'rp') {
+    const rp = objects.find(o => o.type === 'refpoint' && o.id === rl.refpointId);
+    if (!rp) return null;
+    const cx = rp.x + rp.w/2, cy = rp.y + rp.h/2;
+    const rpFoot = footOnLine(cx, cy, rl.x1, rl.y1, rl.x2, rl.y2);
+    const tRp = rlLen2 > 0 ? ((rpFoot.x-rl.x1)*rlDx + (rpFoot.y-rl.y1)*rlDy) / rlLen2 : 0;
+    let nearest = feet[0];
+    for (const ft of feet) {
+      if (Math.abs(ft.t - tRp) < Math.abs(nearest.t - tRp)) nearest = ft;
+    }
+    return { a: rpFoot, b: nearest.f };
+  }
   const i = obj.segIdx;
-  if (i < 0 || i >= feet.length - 1) return null;
+  if (typeof i !== 'number' || i < 0 || i >= feet.length - 1) return null;
   return { a: feet[i].f, b: feet[i+1].f };
 }
 
@@ -2983,6 +2995,17 @@ function ctxMarkPosition(mode) {
     };
     syncPosSegBBox(seg);
     objects.push(seg);
+  }
+  // refpoint-to-nearest-foot segment (only when refline has a linked refpoint)
+  if (rl.refpointId) {
+    const rpSeg = {
+      type: 'pos-seg-mark', carId: car.id, reflineId: rl.id, segIdx: 'rp',
+      mode: pmMode, color: '#43a047', thickness: 1.5,
+      layerId: car.layerId, rotation: 0, x:0, y:0, w:0, h:0,
+      measure: { show:true, t:0.5, d:15, maxD:40, text:'', color:'#e53935', size:11, noBg:false, bgColor:'#ffffff' },
+    };
+    syncPosSegBBox(rpSeg);
+    objects.push(rpSeg);
   }
   selectedObjs = []; syncSel();
   composite(); markDirty(); saveSnap('標記定位');
