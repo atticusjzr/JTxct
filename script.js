@@ -431,7 +431,7 @@ function drawDimline(ctx, obj) {
     ctx.fillStyle = bgC === '#ffffff' ? 'rgba(255,255,255,0.88)' : bgC;
     ctx.fillRect(lx - tw / 2 - PAD, ly - actualFontSize / 2 - PAD, tw + PAD * 2, actualFontSize + PAD * 2);
   }
-  ctx.fillStyle = color;
+  ctx.fillStyle = obj.labelColor || color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(labelText, lx, ly);
@@ -2302,14 +2302,16 @@ function updatePropsPanel() {
 
   // Dimline properties
   if (t === 'dimline') {
-    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" id="pr-color" value="${obj.color||'#e53935'}" oninput="propSetColor(this.value)" onchange="saveSnap('尺寸線顏色')"></div>`);
-    rows.push(`<div class="prop-row"><label>粗細</label><input type="range" min="0.5" max="6" step="0.5" value="${obj.thickness||1.5}" oninput="propSetThicknessLive(this.value)" onchange="saveSnap('尺寸線粗細')"><span class="prop-val">${obj.thickness||1.5}px</span></div>`);
     rows.push(`<div class="prop-row"><label>自動偵測</label><input type="checkbox" ${obj.autoAdapt!==false?'checked':''} onchange="propDimlineAutoAdapt(this.checked)"><span style="font-size:11px;color:var(--dim);margin-left:4px">${obj.autoAdapt!==false?'開啟（右鍵可關閉）':'關閉（右鍵可開啟）'}</span></div>`);
-    rows.push('<div style="font-size:11px;font-weight:600;color:var(--text2,#888);padding:6px 0 2px">數字標籤</div>');
+    rows.push('<div style="font-size:11px;font-weight:600;color:var(--text2,#888);padding:6px 0 2px">外觀</div>');
     rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-dlsync" ${_syncDimlines?'checked':''} onchange="_syncDimlines=this.checked"><span style="font-size:11px;margin-left:4px">同步全部尺寸線</span></div>`);
+    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" id="pr-color" value="${obj.color||'#e53935'}" oninput="propDimlineColor(this.value)" onchange="saveSnap('尺寸線顏色')"></div>`);
+    rows.push(`<div class="prop-row"><label>粗細</label><input type="range" min="0.5" max="6" step="0.5" value="${obj.thickness||1.5}" oninput="propDimlineThickness(this.value)" onchange="saveSnap('尺寸線粗細')"><span class="prop-val">${obj.thickness||1.5}px</span></div>`);
+    const lc = obj.labelColor || obj.color || '#e53935';
     const ls = obj.labelSize || '';
     const lnb = !!obj.labelNoBg;
     const lbg = obj.labelBgColor || '#ffffff';
+    rows.push(`<div class="prop-row"><label>數字顏色</label><input type="color" id="pr-dlcolor" value="${lc}" oninput="propDimlineLabelColor(this.value)" onchange="saveSnap('數字顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>數字大小</label><input type="number" id="pr-dlsize" min="8" max="48" value="${ls}" placeholder="自動" onchange="propDimlineLabelSize(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>數字底色</label><input type="checkbox" ${lnb?'checked':''} onchange="propDimlineLabelNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-dlbgcolor" value="${lbg}" ${lnb?'disabled':''} oninput="propDimlineLabelBgColor(this.value)" onchange="saveSnap('數字底色')"></div>`);
   }
@@ -2569,6 +2571,8 @@ function propSMMeasureColor(v) { const o=_propObj(); if(o?.type!=='size-mark'||!
 function propSMMeasureSize(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyMeasureSync(o,m=>{m.size=s;}); composite();markDirty();saveSnap('尺標大小'); }
 function propSMMeasureNoBg(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.noBg=v;}); composite();markDirty();saveSnap('尺標底色');updatePropsPanel(); }
 function propSMMeasureBgColor(v){ const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.bgColor=v;}); composite();markDirty(); }
+function propDimlineColor(v)    { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.color=v;}); composite();markDirty(); }
+function propDimlineThickness(v){ const o=_propObj(); if(o?.type!=='dimline')return; const th=Math.max(0.5,parseFloat(v)||1.5); _applyDimlineSync(o,d=>{d.thickness=th;}); composite();markDirty(); }
 function propDimlineLabelColor(v) { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.labelColor=v;}); composite();markDirty(); }
 function propDimlineLabelSize(v)  { const o=_propObj(); if(o?.type!=='dimline')return; const s=Math.max(8,Math.min(48,parseFloat(v)||0)); _applyDimlineSync(o,d=>{d.labelSize=s||null;}); composite();markDirty();saveSnap('數字大小'); }
 function propDimlineLabelNoBg(v)  { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.labelNoBg=v;}); composite();markDirty();updatePropsPanel(); }
