@@ -822,6 +822,9 @@ function ptInObj(pt, obj) {
 
 function hitHandle(pt, obj) {
   const hr = 9 / zoom;
+  if (obj.type === 'pos-seg-mark') {
+    return ptOnPosSeg(pt, obj) ? { type: 'move' } : null;
+  }
   if (obj.type === 'dimline') {
     const rot = obj.rotation || 0;
     const rh = { x: obj.cx + Math.cos(rot - Math.PI/2) * 28/zoom,
@@ -877,6 +880,16 @@ function drawSelHandles(ctx, obj) {
   }
   if (obj.type === 'size-mark') {
     const ep = _sizeMarkEndpoints(obj);
+    if (ep) {
+      ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = 2 / zoom;
+      ctx.setLineDash([4/zoom, 3/zoom]);
+      ctx.beginPath(); ctx.moveTo(ep.a.x, ep.a.y); ctx.lineTo(ep.b.x, ep.b.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore(); return;
+  }
+  if (obj.type === 'pos-seg-mark') {
+    const ep = _posSegDrawEp(obj);
     if (ep) {
       ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = 2 / zoom;
       ctx.setLineDash([4/zoom, 3/zoom]);
@@ -1822,10 +1835,11 @@ function ctxMarkPosition(mode) {
   }
   // pos-seg-marks: lines along refline between adjacent foot points
   const segCount = count - 1;
+  const INIT_PERP = 35;
   for (let si = 0; si < segCount; si++) {
     const seg = {
       type: 'pos-seg-mark', carId: car.id, reflineId: rl.id, segIdx: si,
-      mode: pmMode, color: '#43a047', thickness: 1.5,
+      mode: pmMode, color: '#43a047', thickness: 1.5, perpOffset: INIT_PERP,
       layerId: car.layerId, rotation: 0, x:0, y:0, w:0, h:0,
       measure: { show:true, t:0.5, d:15, maxD:40, text:'', color:'#e53935', size:11, noBg:false, bgColor:'#ffffff' },
     };
@@ -1836,7 +1850,7 @@ function ctxMarkPosition(mode) {
   if (rl.refpointId) {
     const rpSeg = {
       type: 'pos-seg-mark', carId: car.id, reflineId: rl.id, segIdx: 'rp',
-      mode: pmMode, color: '#43a047', thickness: 1.5,
+      mode: pmMode, color: '#43a047', thickness: 1.5, perpOffset: INIT_PERP,
       layerId: car.layerId, rotation: 0, x:0, y:0, w:0, h:0,
       measure: { show:true, t:0.5, d:15, maxD:40, text:'', color:'#e53935', size:11, noBg:false, bgColor:'#ffffff' },
     };
