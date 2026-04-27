@@ -1260,6 +1260,7 @@ let _measureDrag = null;   // { objIdx, startMx, startMy, startT, startD }
 let _dimlineLabelDrag = null; // { objIdx, startMx, startMy, startT, startD, ep }
 let _dimlineEndDrag  = null; // { objIdx, side: 1|-1, cos, sin } — endpoint resize
 let _syncMeasures = false; // sync all measure labels of same vehicle
+let _syncPSMeasures = false; // sync all pos-seg-mark measure labels of same vehicle
 let _syncDimlines = false; // sync all dimline label settings
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
@@ -1927,6 +1928,8 @@ function drawObjOnCtx(ctx, obj) {
     drawRefLabel(ctx, obj);
   } else if (obj.type === 'position-mark') {
     drawPositionMark(ctx, obj);
+  } else if (obj.type === 'pos-seg-mark') {
+    drawPosSeg(ctx, obj);
   } else if (obj.type === 'size-mark') {
     drawSizeMark(ctx, obj);
   } else if (obj.type === 'freetext') {
@@ -1984,6 +1987,7 @@ function dist2(a, b) { return (a.x-b.x)**2 + (a.y-b.y)**2; }
 function ptInObj(pt, obj) {
   if (obj.type === 'refline') return ptOnRefLine(pt, obj);
   if (obj.type === 'dimline') return ptOnDimline(pt, obj);
+  if (obj.type === 'pos-seg-mark') return ptOnPosSeg(pt, obj);
   const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
   const cos = Math.cos(-obj.rotation), sin = Math.sin(-obj.rotation);
   const dx = pt.x - cx, dy = pt.y - cy;
@@ -2851,9 +2855,95 @@ function drawPositionMark(ctx, obj) {
   }
 }
 
+// ── pos-seg-mark（基準線上相鄰落腳點距離線）────────────────
+function _posSegFeet(obj) {
+  const car = objects.find(o => o.id === obj.carId);
+  const rl  = objects.find(o => o.type === 'refline' && o.id === obj.reflineId);
+  if (!car || !rl) return null;
+  computeReflineP1(rl);
+  let anchors;
+  if (MOTO_TYPES.has(car.type)) {
+    anchors = getMotoWheelBottoms(car);
+  } else {
+    anchors = obj.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car);
+  }
+  const rlDx = rl.x2 - rl.x1, rlDy = rl.y2 - rl.y1;
+  const rlLen2 = rlDx*rlDx + rlDy*rlDy;
+  const feet = anchors.map(c => {
+    const f = footOnLine(c.x, c.y, rl.x1, rl.y1, rl.x2, rl.y2);
+    const t = rlLen2 > 0 ? ((f.x-rl.x1)*rlDx + (f.y-rl.y1)*rlDy) / rlLen2 : 0;
+    return { f, t };
+  }).sort((a, b) => a.t - b.t);
+  const i = obj.segIdx;
+  if (i < 0 || i >= feet.length - 1) return null;
+  return { a: feet[i].f, b: feet[i+1].f };
+}
+
+function syncPosSegBBox(obj) {
+  const ep = _posSegFeet(obj);
+  if (!ep) { obj.x=0; obj.y=0; obj.w=0; obj.h=0; return; }
+  const pad = 20;
+  obj.x = Math.min(ep.a.x, ep.b.x) - pad;
+  obj.y = Math.min(ep.a.y, ep.b.y) - pad;
+  obj.w = Math.abs(ep.b.x - ep.a.x) + pad*2;
+  obj.h = Math.abs(ep.b.y - ep.a.y) + pad*2;
+  obj.rotation = 0;
+}
+
+function ptOnPosSeg(pt, obj) {
+  const ep = _posSegFeet(obj);
+  if (!ep) return false;
+  return ptNearSeg(pt, ep.a.x, ep.a.y, ep.b.x, ep.b.y, 8 / zoom);
+}
+
+function drawPosSeg(ctx, obj) {
+  const ep = _posSegFeet(obj);
+  if (!ep) return;
+  syncPosSegBBox(obj);
+  const { a, b } = ep;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 1) return;
+  const clr = obj.color || '#43a047';
+  const lw  = obj.thickness || 1.5;
+  const nx = dx/len, ny = dy/len;
+  const px = -ny, py = nx;
+  const TICK = 8;
+  ctx.save();
+  ctx.strokeStyle = clr; ctx.fillStyle = clr; ctx.lineWidth = lw;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  for (const p of [a, b]) {
+    ctx.beginPath();
+    ctx.moveTo(p.x + px*TICK, p.y + py*TICK);
+    ctx.lineTo(p.x - px*TICK, p.y - py*TICK);
+    ctx.stroke();
+  }
+  if (!obj.measure) obj.measure = { show:true, t:0.5, d:15, maxD:40, text:'', color:'#e53935', size:11, noBg:false, bgColor:'#ffffff' };
+  if (obj.measure.show) {
+    const m = obj.measure;
+    const t = m.t ?? 0.5, d = m.d ?? 15;
+    const mx = a.x + dx*t + px*d, my = a.y + dy*t + py*d;
+    const cmVal = (len * 21.0 / H).toFixed(1);
+    const text = m.text || cmVal;
+    const sz = m.size || 11;
+    ctx.font = `bold ${sz}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(text).width, pad = 3;
+    if (!m.noBg) {
+      ctx.fillStyle = m.bgColor || '#ffffff';
+      ctx.fillRect(mx - tw/2 - pad, my - sz*0.6 - pad, tw + pad*2, sz*1.2 + pad*2);
+    }
+    ctx.fillStyle = m.color || '#e53935';
+    ctx.fillText(text, mx, my);
+    obj._lastPosSegLabel = { x: mx, y: my, hw: tw/2+pad, hh: sz*0.6+pad };
+  }
+  ctx.restore();
+}
+
 function removeAllPositionMarks(carId) {
   for (let i = objects.length - 1; i >= 0; i--) {
-    if (objects[i].type === 'position-mark' && objects[i].carId === carId)
+    if ((objects[i].type === 'position-mark' || objects[i].type === 'pos-seg-mark') && objects[i].carId === carId)
       objects.splice(i, 1);
   }
   selectedObjs = selectedObjs.filter(i => i < objects.length && objects[i]);
@@ -2871,16 +2961,28 @@ function ctxMarkPosition(mode) {
   if (!car.id) car.id = Math.random().toString(36).slice(2);
   if (!rl.id)  rl.id  = Math.random().toString(36).slice(2);
   const count = isMoto ? 2 : 4;
+  const pmMode = isMoto ? 'wheel' : (mode || 'corner');
   for (let ci = 0; ci < count; ci++) {
     const pm = {
       type: 'position-mark', carId: car.id, reflineId: rl.id, cornerIdx: ci,
-      mode: isMoto ? 'wheel' : (mode || 'corner'),
-      color: '#1565c0', thickness: 1.5,
+      mode: pmMode, color: '#1565c0', thickness: 1.5,
       layerId: car.layerId, rotation: 0, x:0, y:0, w:0, h:0,
       measure: { show:true, t:0.5, d:15, maxD:40, text:'', color:'#e53935', size:11, noBg:false, bgColor:'#ffffff' },
     };
     syncPositionMarkBBox(pm);
     objects.push(pm);
+  }
+  // pos-seg-marks: lines along refline between adjacent foot points
+  const segCount = count - 1;
+  for (let si = 0; si < segCount; si++) {
+    const seg = {
+      type: 'pos-seg-mark', carId: car.id, reflineId: rl.id, segIdx: si,
+      mode: pmMode, color: '#43a047', thickness: 1.5,
+      layerId: car.layerId, rotation: 0, x:0, y:0, w:0, h:0,
+      measure: { show:true, t:0.5, d:15, maxD:40, text:'', color:'#e53935', size:11, noBg:false, bgColor:'#ffffff' },
+    };
+    syncPosSegBBox(seg);
+    objects.push(seg);
   }
   selectedObjs = []; syncSel();
   composite(); markDirty(); saveSnap('標記定位');
@@ -3340,7 +3442,7 @@ const OBJ_TYPE_NAMES = {
   car:'小汽車', truck:'小貨車', bus:'公車', semi:'大貨車', artic:'聯結車',
   moto:'機車', hydrant:'消防栓', compass:'指北針',
   refpoint:'基準點', refline:'基準線', reflabel:'基準線標籤',
-  'position-mark':'定位標記',
+  'position-mark':'定位標記', 'pos-seg-mark':'定位間距線',
   'size-mark':'車長車寬標記',
   'marking-single-solid':'單實線', 'marking-single-dashed':'單虛線',
   'marking-dbl-solid':'雙實線', 'marking-zebra':'斑馬線',
@@ -3399,7 +3501,7 @@ function updatePropsPanel() {
   }
 
   // Color
-  const NO_COLOR = new Set(['position-mark', 'dimline']); // these handle color in their own section
+  const NO_COLOR = new Set(['position-mark', 'dimline', 'pos-seg-mark']); // these handle color in their own section
   if (obj.color !== undefined && !NO_COLOR.has(t)) {
     rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-color" value="${obj.color || '#000000'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
   } else if (t === 'position-mark' && obj.color !== undefined) {
@@ -3435,8 +3537,26 @@ function updatePropsPanel() {
   }
   if (t === 'position-mark') {
     const th = obj.thickness || 1.5;
+    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" value="${obj.color||'#1565c0'}" oninput="propSetColor(this.value)" onchange="saveSnap('定位線顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="0.5" max="10" step="0.5" value="${th}" oninput="this.nextElementSibling.value=this.value;propSetPMThickness(this.value)" style="flex:1;min-width:0"><input type="number" min="0.5" max="10" step="0.5" value="${th}" style="width:44px" onchange="this.previousElementSibling.value=this.value;propSetPMThickness(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-pm-thsync" checked><span style="font-size:11px;margin-left:4px">同步本物件所有定位線</span></div>`);
+  }
+  if (t === 'pos-seg-mark') {
+    const th = obj.thickness || 1.5;
+    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" value="${obj.color||'#43a047'}" oninput="propSetColor(this.value)" onchange="saveSnap('間距線顏色')"></div>`);
+    rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="0.5" max="10" step="0.5" value="${th}" oninput="this.nextElementSibling.value=this.value;propSetPSMThickness(this.value)" style="flex:1;min-width:0"><input type="number" min="0.5" max="10" step="0.5" value="${th}" style="width:44px" onchange="this.previousElementSibling.value=this.value;propSetPSMThickness(this.value)"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-psm-thsync" checked><span style="font-size:11px;margin-left:4px">同步本物件所有間距線</span></div>`);
+    if (obj.measure) {
+      const m = obj.measure;
+      rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-psmsync" ${_syncPSMeasures?'checked':''} onchange="_syncPSMeasures=this.checked"><span style="font-size:11px;margin-left:4px">同步本車所有尺標</span></div>`);
+      rows.push(`<div class="prop-row"><label>尺標顯示</label><input type="checkbox" ${m.show?'checked':''} onchange="propPSMMeasureShow(this.checked)"></div>`);
+      rows.push(`<div class="prop-row"><label>尺標數字</label><input type="number" id="pr-psmtext" min="0" step="0.001" value="${m.text||''}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" placeholder="自動" oninput="propPSMMeasureText(this.value)"></div>`);
+      rows.push(`<div class="prop-row"><label>尺標垂直距</label><input type="number" id="pr-psmperp" min="-200" max="200" value="${Math.round(m.d||15)}" onchange="propPSMMeasurePerp(this.value)"><span class="prop-val">px</span></div>`);
+      rows.push(`<div class="prop-row"><label>尺標最大垂距</label><input type="number" id="pr-psmmaxd" min="10" max="300" value="${m.maxD||40}" onchange="propPSMMeasureMaxD(this.value)"><span class="prop-val">px</span></div>`);
+      rows.push(`<div class="prop-row"><label>尺標顏色</label><input type="color" id="pr-psmcolor" value="${m.color||'#e53935'}" oninput="propPSMMeasureColor(this.value)" onchange="saveSnap('尺標顏色')"></div>`);
+      rows.push(`<div class="prop-row"><label>尺標大小</label><input type="number" id="pr-psmsize" min="8" max="48" value="${m.size||11}" onchange="propPSMMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
+      rows.push(`<div class="prop-row"><label>尺標底色</label><input type="checkbox" ${m.noBg?'checked':''} onchange="propPSMMeasureNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-psmbgcolor" value="${m.bgColor||'#ffffff'}" ${m.noBg?'disabled':''} oninput="propPSMMeasureBgColor(this.value)" onchange="saveSnap('尺標底色')"></div>`);
+    }
   }
 
   // Position-mark measure
@@ -3754,6 +3874,32 @@ function propSetSMThickness(v) {
   }
   composite(); markDirty(); saveSnap('線條粗細');
 }
+function propSetPSMThickness(v) {
+  const o = _propObj();
+  if (!o || o.type !== 'pos-seg-mark') return;
+  const th = Math.max(0.5, parseFloat(v) || 1.5);
+  const sync = document.getElementById('pr-psm-thsync')?.checked ?? true;
+  if (sync && o.carId) {
+    objects.filter(x => x.type === 'pos-seg-mark' && x.carId === o.carId).forEach(x => x.thickness = th);
+  } else {
+    o.thickness = th;
+  }
+  composite(); markDirty(); saveSnap('線條粗細');
+}
+function _applyPSMMeasureSync(obj, fn) {
+  fn(obj.measure, obj);
+  if (_syncPSMeasures && obj.carId) {
+    objects.filter(o => o !== obj && o.type === 'pos-seg-mark' && o.carId === obj.carId && o.measure).forEach(s => fn(s.measure, s));
+  }
+}
+function propPSMMeasureShow(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; _applyPSMMeasureSync(o,m=>{m.show=v;}); composite();markDirty();saveSnap('尺標顯示');updatePropsPanel(); }
+function propPSMMeasureText(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; const n=parseFloat(v),t=isNaN(n)?'':(+n.toFixed(3)).toString(); _applyPSMMeasureSync(o,m=>{m.text=t;}); composite();markDirty(); }
+function propPSMMeasurePerp(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; _applyPSMMeasureSync(o,m=>{const mx=m.maxD||40;m.d=Math.max(-mx,Math.min(mx,parseFloat(v)||15));}); composite();markDirty();saveSnap('尺標垂直距'); }
+function propPSMMeasureMaxD(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; const nm=Math.max(10,parseFloat(v)||40); _applyPSMMeasureSync(o,m=>{m.maxD=nm;m.d=Math.max(-nm,Math.min(nm,m.d??15));}); composite();markDirty();saveSnap('尺標最大垂距'); }
+function propPSMMeasureColor(v) { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; _applyPSMMeasureSync(o,m=>{m.color=v;}); composite();markDirty(); }
+function propPSMMeasureSize(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyPSMMeasureSync(o,m=>{m.size=s;}); composite();markDirty();saveSnap('尺標大小'); }
+function propPSMMeasureNoBg(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; _applyPSMMeasureSync(o,m=>{m.noBg=v;}); composite();markDirty();saveSnap('尺標底色');updatePropsPanel(); }
+function propPSMMeasureBgColor(v){ const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; _applyPSMMeasureSync(o,m=>{m.bgColor=v;}); composite();markDirty(); }
 function propSMMeasureShow(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.show=v;}); composite();markDirty();saveSnap('尺標顯示');updatePropsPanel(); }
 function propSMMeasureText(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; const n=parseFloat(v),t=isNaN(n)?'':(+n.toFixed(3)).toString(); _applyMeasureSync(o,m=>{m.text=t;}); composite();markDirty(); }
 function propSMMeasurePerp(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{const mx=m.maxD||40;m.d=Math.max(-mx,Math.min(mx,parseFloat(v)||15));}); composite();markDirty();saveSnap('尺標垂直距'); }
