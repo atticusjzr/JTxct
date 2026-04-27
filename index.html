@@ -2828,7 +2828,7 @@ function updatePropsPanel() {
     'marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle']);
   if (HAS_ROT.has(t)) {
     const deg = Math.round(((obj.rotation || 0) * 180 / Math.PI + 360) % 360);
-    rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="number" id="pr-rotation" min="0" max="359" value="${deg}" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
+    rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="range" min="0" max="359" step="1" value="${deg}" oninput="this.nextElementSibling.value=this.value;propSetRotationLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-rotation" min="0" max="359" step="1" value="${deg}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetRotationLive(this.value)" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
   }
 
   // Flip (all types except refline/reflabel which have complex geometry)
@@ -2867,7 +2867,7 @@ function updatePropsPanel() {
   // Thickness
   const HAS_THICK = new Set(['refpoint','refline','marking-turn','marking-chanl','marking-grid','marking-moto-zone','marking-parking']);
   if (HAS_THICK.has(t)) {
-    rows.push(`<div class="prop-row"><label>線條粗細</label><input type="number" id="pr-thickness" min="1" max="60" value="${obj.thickness || 3}" onchange="propSetThickness(this.value)"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="1" max="60" step="1" value="${obj.thickness || 3}" oninput="this.nextElementSibling.value=this.value;propSetThicknessLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-thickness" min="1" max="60" step="1" value="${obj.thickness || 3}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetThicknessLive(this.value)" onchange="propSetThickness(this.value)"><span class="prop-val">px</span></div>`);
   }
   if (t === 'position-mark') {
     const th = obj.thickness || 1.5;
@@ -2891,8 +2891,8 @@ function updatePropsPanel() {
   if (t === 'marking-sepisle' || t === 'marking-chanl') {
     const ang = obj.hatchAngle ?? 45;
     const sp  = obj.hatchSpacing ?? (t === 'marking-chanl' ? Math.max((obj.thickness||10)*2.2,12) : Math.max((obj.h||20)*0.55,12));
-    rows.push(`<div class="prop-row"><label>斜線角度</label><input type="number" id="pr-hatch-ang" min="1" max="89" value="${ang}" oninput="setHatchAngleLive(this.value)" onchange="saveSnap('斜線角度')"><span class="prop-val">°</span></div>`);
-    rows.push(`<div class="prop-row"><label>斜線間距</label><input type="number" id="pr-hatch-sp" min="4" max="80" value="${Math.round(sp)}" oninput="setHatchSpacingLive(this.value)" onchange="saveSnap('斜線間距')"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>斜線角度</label><input type="range" min="1" max="89" step="1" value="${ang}" id="pr-hatch-ang-slider" oninput="this.nextElementSibling.value=this.value;setHatchAngleLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-hatch-ang" min="1" max="89" step="1" value="${ang}" style="width:44px" oninput="this.previousElementSibling.value=this.value;setHatchAngleLive(this.value)" onchange="saveSnap('斜線角度')"><span class="prop-val">°</span></div>`);
+    rows.push(`<div class="prop-row"><label>斜線間距</label><input type="range" min="4" max="80" step="1" value="${Math.round(sp)}" id="pr-hatch-sp-slider" oninput="this.nextElementSibling.value=this.value;setHatchSpacingLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-hatch-sp" min="4" max="80" step="1" value="${Math.round(sp)}" style="width:44px" oninput="this.previousElementSibling.value=this.value;setHatchSpacingLive(this.value)" onchange="saveSnap('斜線間距')"><span class="prop-val">px</span></div>`);
   }
 
   // marking-text content
@@ -3035,6 +3035,11 @@ function propSetRotation(v) {
   o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
   composite(); markDirty(); saveSnap('旋轉角度');
 }
+function propSetRotationLive(v) {
+  const o = _propObj(); if (!o) return;
+  o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
+  composite(); markDirty();
+}
 function propToggleFlip(axis) {
   const o = _propObj(); if (!o) return;
   if (o.type === 'marking-turn' || o.type === 'marking-chanl') {
@@ -3080,6 +3085,11 @@ function propSetThickness(v) {
   const o = _propObj(); if (!o) return;
   o.thickness = Math.max(0.5, parseFloat(v) || 1);
   composite(); markDirty(); saveSnap('線條粗細');
+}
+function propSetThicknessLive(v) {
+  const o = _propObj(); if (!o) return;
+  o.thickness = Math.max(0.5, parseFloat(v) || 1);
+  composite(); markDirty();
 }
 function propSetDash(v) {
   const o = _propObj(); if (!o) return;
@@ -4813,6 +4823,7 @@ function setHatchAngleLive(v) {
   const val = Math.round(Math.max(1, Math.min(89, +v)));
   const el = document.getElementById('ctx-hatch-ang-val'); if (el) el.textContent = val;
   const elP = document.getElementById('pr-hatch-ang'); if (elP) elP.value = val;
+  const elS = document.getElementById('pr-hatch-ang-slider'); if (elS) elS.value = val;
   selectedObjs.forEach(i => {
     if (objects[i] && (objects[i].type === 'marking-sepisle' || objects[i].type === 'marking-chanl'))
       objects[i].hatchAngle = val;
@@ -4823,6 +4834,7 @@ function setHatchSpacingLive(v) {
   const val = Math.round(Math.max(4, Math.min(80, +v)));
   const el = document.getElementById('ctx-hatch-sp-val'); if (el) el.textContent = val;
   const elP = document.getElementById('pr-hatch-sp'); if (elP) elP.value = val;
+  const elS = document.getElementById('pr-hatch-sp-slider'); if (elS) elS.value = val;
   selectedObjs.forEach(i => {
     if (objects[i] && (objects[i].type === 'marking-sepisle' || objects[i].type === 'marking-chanl'))
       objects[i].hatchSpacing = val;
