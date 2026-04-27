@@ -6186,7 +6186,8 @@ function doNew() {
 function cmdSave() {
   openModal('儲存專案',
     `<label style="display:block;margin-bottom:6px;font-size:12px;color:var(--dim)">專案名稱</label>
-     <input type="text" id="save-inp" value="${projName}" placeholder="輸入名稱">`,
+     <input type="text" id="save-inp" value="${projName}" placeholder="輸入名稱">
+     <p style="margin:10px 0 0;font-size:11px;color:var(--dim)">⚠ 儲存至瀏覽器本機暫存，清除快取或換裝置會消失。<br>如需永久保留請使用「匯出檔案」下載 .json。</p>`,
     [
       { text:'取消', cls:'btn',         fn: closeModal },
       { text:'儲存', cls:'btn primary', fn: doSave },
@@ -6223,7 +6224,8 @@ function doSave() {
 function cmdSaveThen(afterFn) {
   openModal('儲存專案',
     `<label style="display:block;margin-bottom:6px;font-size:12px;color:var(--dim)">專案名稱</label>
-     <input type="text" id="save-inp" value="${projName}" placeholder="輸入名稱">`,
+     <input type="text" id="save-inp" value="${projName}" placeholder="輸入名稱">
+     <p style="margin:10px 0 0;font-size:11px;color:var(--dim)">⚠ 儲存至瀏覽器本機暫存，清除快取或換裝置會消失。<br>如需永久保留請使用「匯出檔案」下載 .json。</p>`,
     [
       { text:'取消', cls:'btn', fn: closeModal },
       { text:'儲存', cls:'btn primary', fn: () => { if (doSave() !== false) afterFn?.(); } },
