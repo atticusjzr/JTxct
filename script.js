@@ -4893,6 +4893,19 @@ function drawMarkingText(ctx, obj) {
   ctx.restore();
 }
 
+// 图片加载后生成工具栏小图标
+function _setArrowToolIcon(selector, img, sx, sy, sw, sh) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 28;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, sx, sy, sw, sh, 0, 0, 28, 28);
+  const el = document.querySelector(selector + ' .opt-icon-img');
+  if (el) el.src = c.toDataURL();
+}
+arrowTurnImg.onload         = () => _setArrowToolIcon('[data-v="arrow-turn"]',         arrowTurnImg,         303, 141, 546, 745);
+arrowStraightTurnImg.onload = () => _setArrowToolIcon('[data-v="arrow-straight-turn"]', arrowStraightTurnImg, 316, 109, 528, 806);
+arrowThreeWayImg.onload     = () => _setArrowToolIcon('[data-v="arrow-three-way"]',     arrowThreeWayImg,     68,  93,  890, 836);
+
 function drawMarkingArrow(ctx, obj) {
   const { x, y, w, h, color } = obj;
   ctx.save();
@@ -4916,7 +4929,7 @@ function drawMarkingArrowTurn(ctx, obj) {
   const { x, y, w, h } = obj;
   ctx.save();
   if (arrowTurnImg && arrowTurnImg.complete && arrowTurnImg.naturalWidth > 0) {
-    ctx.drawImage(arrowTurnImg, x, y, w, h);
+    ctx.drawImage(arrowTurnImg, 303, 141, 546, 745, x, y, w, h);
   } else {
     ctx.fillStyle = obj.color || '#ffffff';
     ctx.fillRect(x, y, w, h);
@@ -4928,7 +4941,7 @@ function drawMarkingArrowStraightTurn(ctx, obj) {
   const { x, y, w, h, color } = obj;
   ctx.save();
   if (arrowStraightTurnImg && arrowStraightTurnImg.complete && arrowStraightTurnImg.naturalWidth > 0) {
-    ctx.drawImage(arrowStraightTurnImg, x, y, w, h);
+    ctx.drawImage(arrowStraightTurnImg, 316, 109, 528, 806, x, y, w, h);
   } else {
     ctx.fillStyle = color || '#ffffff';
     ctx.fillRect(x, y, w, h);
@@ -4944,7 +4957,7 @@ function drawMarkingArrowThreeWay(ctx, obj) {
   const { x, y, w, h } = obj;
   ctx.save();
   if (arrowThreeWayImg && arrowThreeWayImg.complete && arrowThreeWayImg.naturalWidth > 0) {
-    ctx.drawImage(arrowThreeWayImg, x, y, w, h);
+    ctx.drawImage(arrowThreeWayImg, 68, 93, 890, 836, x, y, w, h);
   } else {
     ctx.fillStyle = obj.color || '#ffffff';
     ctx.fillRect(x, y, w, h);

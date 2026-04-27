@@ -888,9 +888,9 @@ body {
         <div class="marking-opt"        data-v="parking"       onclick="setMarkingVariant('parking',this)">      <span class="opt-icon">🅿</span><span>停車格</span></div>
         <div class="marking-opt"        data-v="rect"          onclick="setMarkingVariant('rect',this)">          <span class="opt-icon">▬</span><span>實色矩形</span></div>
         <div class="marking-opt"        data-v="arrow"         onclick="setMarkingVariant('arrow',this)">         <span class="opt-icon">↑</span><span>直行箭頭</span></div>
-        <div class="marking-opt"        data-v="arrow-turn"    onclick="setMarkingVariant('arrow-turn',this)">    <span class="opt-icon">↱</span><span>轉向箭頭</span></div>
-        <div class="marking-opt"        data-v="arrow-straight-turn" onclick="setMarkingVariant('arrow-straight-turn',this)"><span class="opt-icon">⬆↱</span><span>直行轉向</span></div>
-        <div class="marking-opt"        data-v="arrow-three-way"    onclick="setMarkingVariant('arrow-three-way',this)">    <span class="opt-icon">⬆↔</span><span>三向箭頭</span></div>
+        <div class="marking-opt"        data-v="arrow-turn"    onclick="setMarkingVariant('arrow-turn',this)">    <span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>轉向箭頭</span></div>
+        <div class="marking-opt"        data-v="arrow-straight-turn" onclick="setMarkingVariant('arrow-straight-turn',this)"><span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>直行轉向</span></div>
+        <div class="marking-opt"        data-v="arrow-three-way"    onclick="setMarkingVariant('arrow-three-way',this)">    <span class="opt-icon"><img class="opt-icon-img" style="width:20px;height:20px;vertical-align:middle"></span><span>三向箭頭</span></div>
       </div>
     </div>
     <div id="mtext-tool-wrap">
@@ -6045,6 +6045,19 @@ function drawMarkingText(ctx, obj) {
   ctx.restore();
 }
 
+// 图片加载后生成工具栏小图标
+function _setArrowToolIcon(selector, img, sx, sy, sw, sh) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 28;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, sx, sy, sw, sh, 0, 0, 28, 28);
+  const el = document.querySelector(selector + ' .opt-icon-img');
+  if (el) el.src = c.toDataURL();
+}
+arrowTurnImg.onload         = () => _setArrowToolIcon('[data-v="arrow-turn"]',         arrowTurnImg,         303, 141, 546, 745);
+arrowStraightTurnImg.onload = () => _setArrowToolIcon('[data-v="arrow-straight-turn"]', arrowStraightTurnImg, 316, 109, 528, 806);
+arrowThreeWayImg.onload     = () => _setArrowToolIcon('[data-v="arrow-three-way"]',     arrowThreeWayImg,     68,  93,  890, 836);
+
 function drawMarkingArrow(ctx, obj) {
   const { x, y, w, h, color } = obj;
   ctx.save();
@@ -6068,7 +6081,7 @@ function drawMarkingArrowTurn(ctx, obj) {
   const { x, y, w, h } = obj;
   ctx.save();
   if (arrowTurnImg && arrowTurnImg.complete && arrowTurnImg.naturalWidth > 0) {
-    ctx.drawImage(arrowTurnImg, x, y, w, h);
+    ctx.drawImage(arrowTurnImg, 303, 141, 546, 745, x, y, w, h);
   } else {
     ctx.fillStyle = obj.color || '#ffffff';
     ctx.fillRect(x, y, w, h);
@@ -6080,7 +6093,7 @@ function drawMarkingArrowStraightTurn(ctx, obj) {
   const { x, y, w, h, color } = obj;
   ctx.save();
   if (arrowStraightTurnImg && arrowStraightTurnImg.complete && arrowStraightTurnImg.naturalWidth > 0) {
-    ctx.drawImage(arrowStraightTurnImg, x, y, w, h);
+    ctx.drawImage(arrowStraightTurnImg, 316, 109, 528, 806, x, y, w, h);
   } else {
     ctx.fillStyle = color || '#ffffff';
     ctx.fillRect(x, y, w, h);
@@ -6096,7 +6109,7 @@ function drawMarkingArrowThreeWay(ctx, obj) {
   const { x, y, w, h } = obj;
   ctx.save();
   if (arrowThreeWayImg && arrowThreeWayImg.complete && arrowThreeWayImg.naturalWidth > 0) {
-    ctx.drawImage(arrowThreeWayImg, x, y, w, h);
+    ctx.drawImage(arrowThreeWayImg, 68, 93, 890, 836, x, y, w, h);
   } else {
     ctx.fillStyle = obj.color || '#ffffff';
     ctx.fillRect(x, y, w, h);
