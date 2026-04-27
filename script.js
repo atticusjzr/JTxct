@@ -88,6 +88,7 @@ let _syncDimlines = false; // sync all dimline label settings
 let _posSegDragInfo = null; // { px, py, peers:[{idx,origPerp}] }
 let _scale = 100;           // display scale denominator (100 = 1:100, display in meters)
 let _constraintMode = false;
+let _lockDragInfo = null;   // { fixedPt:{x,y}, localX, localY, origRot, startAngle }
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -1619,6 +1620,25 @@ function getMotoWheelBottoms(obj) {
     x: cx + lx * cos - ly * sin,
     y: cy + lx * sin + ly * cos,
   }));
+}
+
+// Returns locked position-mark corner info for a given car:
+// [{worldX, worldY, localX, localY}] — one entry per locked PM
+function _getLockedCornerInfo(car) {
+  const res = [];
+  for (const o of objects) {
+    if (o.type !== 'position-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+    let corners;
+    if (MOTO_TYPES.has(car.type)) corners = getMotoWheelBottoms(car);
+    else corners = o.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car);
+    const c = corners[o.cornerIdx];
+    if (!c) continue;
+    const cx = car.x + car.w/2, cy = car.y + car.h/2;
+    const cos = Math.cos(car.rotation), sin = Math.sin(car.rotation);
+    const wx = c.x - cx, wy = c.y - cy;
+    res.push({ worldX: c.x, worldY: c.y, localX: wx*cos + wy*sin, localY: -wx*sin + wy*cos });
+  }
+  return res;
 }
 
 function _posMarkEndpoints(obj) {
@@ -3681,7 +3701,12 @@ function onDown(e) {
         const orig = selectObjOrig[0];
         if (hit.type === 'corner') {
           selectState = 'resize'; selectCorner = hit.idx;
-          anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
+          if (CAR_TYPES.has(orig.type) || MOTO_TYPES.has(orig.type)) {
+            const lck = _getLockedCornerInfo(orig);
+            anchorWorld = lck.length === 1 ? { x: lck[0].worldX, y: lck[0].worldY } : getCorners(orig)[(hit.idx + 2) % 4];
+          } else {
+            anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
+          }
         } else if (hit.type === 'edge') {
           selectState = 'edge'; selectCorner = hit.idx;
           anchorWorld = getMidpoints(orig)[(hit.idx + 2) % 4];
@@ -3746,6 +3771,22 @@ function onDown(e) {
           }
         } else {
           selectState = 'move';
+          _lockDragInfo = null;
+          if (CAR_TYPES.has(orig.type) || MOTO_TYPES.has(orig.type)) {
+            const lck = _getLockedCornerInfo(orig);
+            if (lck.length === 1) {
+              const lc = lck[0];
+              _lockDragInfo = {
+                fixedPt: { x: lc.worldX, y: lc.worldY },
+                localX: lc.localX, localY: lc.localY,
+                origRot: orig.rotation,
+                startAngle: Math.atan2(pt.y - lc.worldY, pt.x - lc.worldX)
+              };
+              selectState = 'move-locked-1';
+            } else if (lck.length >= 2) {
+              selectState = 'move-locked-n';
+            }
+          }
         }
       } else {
         selectState = 'move';
@@ -4086,6 +4127,23 @@ function onMove(e) {
         resizeEdge(obj, selectCorner, pt.x, pt.y);
       }
       _computeResizeGuides();
+    } else if (selectState === 'move-locked-1' && _lockDragInfo) {
+      const obj = objects[selectedObjs[0]];
+      if (obj) {
+        const ld = _lockDragInfo;
+        const curAngle = Math.atan2(pt.y - ld.fixedPt.y, pt.x - ld.fixedPt.x);
+        let dAngle = curAngle - ld.startAngle;
+        while (dAngle >  Math.PI) dAngle -= 2*Math.PI;
+        while (dAngle < -Math.PI) dAngle += 2*Math.PI;
+        const newRot = ld.origRot + dAngle;
+        const cosR = Math.cos(newRot), sinR = Math.sin(newRot);
+        obj.x = ld.fixedPt.x - (ld.localX*cosR - ld.localY*sinR) - obj.w/2;
+        obj.y = ld.fixedPt.y - (ld.localX*sinR + ld.localY*cosR) - obj.h/2;
+        obj.rotation = newRot;
+        _posRotLabel(obj);
+      }
+    } else if (selectState === 'move-locked-n') {
+      // 2+ corners locked — translation blocked
     } else if (selectState === 'rotate') {
       const orig = selectObjOrig[0];
       const obj = objects[selectedObjs[0]];
@@ -4339,6 +4397,7 @@ function onUp(e) {
     }
     const _endState = selectState;
     drawing = false; selectState = 'idle';
+    _lockDragInfo = null;
     _guideLines = [];
     linkedReflineOrig = null;
     rotLabel.classList.remove('rotating'); // restore interactivity after drag
@@ -6082,6 +6141,10 @@ function _applyConstraint(obj, val) {
     const car = objects.find(o => o.id === obj.carId);
     const ep = _posMarkEndpoints(obj);
     if (!car || !ep || car.constraintLocked) return;
+    const otherLocked = objects.filter(o => o !== obj && o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
+    if (otherLocked.length > 0) {
+      _showLockBlockedModal(otherLocked); return;
+    }
     const { c, f } = ep;
     const curPx = Math.sqrt((c.x-f.x)**2 + (c.y-f.y)**2);
     if (curPx < 1) return;
@@ -6095,6 +6158,10 @@ function _applyConstraint(obj, val) {
     const car = objects.find(o => o.id === obj.carId);
     const ep = _posSegFeet(obj);
     if (!car || !ep || car.constraintLocked) return;
+    const otherLocked = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
+    if (otherLocked.length > 0) {
+      _showLockBlockedModal(otherLocked); return;
+    }
     const { a, b } = ep;
     const curPx = Math.sqrt((b.x-a.x)**2 + (b.y-a.y)**2);
     if (curPx < 1) return;
@@ -6107,6 +6174,10 @@ function _applyConstraint(obj, val) {
   if (obj.type === 'size-mark') {
     const car = objects.find(o => o.id === obj.carId);
     if (!car || car.constraintLocked) return;
+    const otherLocked = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
+    if (otherLocked.length > 0) {
+      _showLockBlockedModal(otherLocked); return;
+    }
     const cx = car.x + car.w/2, cy = car.y + car.h/2;
     if (obj.axis === 'length') {
       car.w = targetPx;
@@ -6116,6 +6187,17 @@ function _applyConstraint(obj, val) {
       car.y = cy - car.h/2;
     }
   }
+}
+
+function _showLockBlockedModal(lockedPMs) {
+  const OBJ_TYPE_NAMES_LOCAL = { 'position-mark': '定位線' };
+  const corners = ['第1角', '第2角', '第3角', '第4角'];
+  const names = lockedPMs.map(pm => `定位線（${corners[pm.cornerIdx] || '角' + pm.cornerIdx}）`).join('、');
+  openModal('無法編輯',
+    `<p style="margin:0 0 8px">因為 <b>${names}</b> 已鎖定，無法自由改變此線段的長度。</p>
+     <p style="margin:0;font-size:11px;color:var(--dim)">如需自由輸入數字，請在右上角切換為「自由編輯模式」。</p>`,
+    [{ text:'確認', cls:'btn primary', fn: closeModal }]
+  );
 }
 
 function drawRefPoint(ctx, x, y, w, h, color, thickness, style) {
