@@ -4671,7 +4671,7 @@ function startMeasureEdit(objIdx) {
   else if (obj.type === 'size-mark') inp.value = obj.measure.text || sizeMarkMeasureText(obj);
   else inp.value = obj.measure.text || posMarkMeasureText(obj);
   const sz = (obj.measure.size || 11) * zoom;
-  inp.style.cssText = `position:absolute;left:${Math.round(pos.x*zoom-60)}px;top:${Math.round(pos.y*zoom-14)}px;width:120px;background:#fff;border:2px solid #5c6bc0;border-radius:4px;padding:2px 6px;font-size:${sz}px;text-align:center;z-index:500;outline:none;box-sizing:border-box;`;
+  inp.style.cssText = `position:absolute;left:${Math.round((pos.x+CANVAS_MARGIN)*zoom-60)}px;top:${Math.round((pos.y+CANVAS_MARGIN)*zoom-14)}px;width:120px;background:#fff;border:2px solid #5c6bc0;border-radius:4px;padding:2px 6px;font-size:${sz}px;text-align:center;z-index:500;outline:none;box-sizing:border-box;`;
   const commit = () => { commitMeasureEdit(objIdx, inp.value); inp.remove(); };
   inp.addEventListener('keydown', e => { if (e.key==='Enter'){e.preventDefault();commit();} if (e.key==='Escape') inp.remove(); });
   inp.addEventListener('blur', commit);
