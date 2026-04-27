@@ -1269,6 +1269,7 @@ let _posSegDragInfo = null; // { px, py, peers:[{idx,origPerp}] }
 let _scale = 100;           // display scale denominator (100 = 1:100, display in meters)
 let _constraintMode = false;
 let _lockDragInfo = null;   // { fixedPt:{x,y}, localX, localY, origRot, startAngle }
+let _resizeCornerMode = null; // null | 'w-only' | 'h-only'
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -2036,19 +2037,20 @@ function hitHandle(pt, obj) {
     return null;
   }
   const corners = getCorners(obj);
-  const lockedCI = (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) ? _getLockedBboxCorners(obj) : new Set();
+  const isVehicle = CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type);
+  const { disabledCorners, disabledEdges, cornerModes, disabledRotate } =
+    isVehicle ? _getCarHandleConstraints(obj) : { disabledCorners: new Set(), disabledEdges: new Set(), cornerModes: new Map(), disabledRotate: false };
   for (let i = 0; i < 4; i++) {
-    if (lockedCI.has(i)) continue;
-    if (dist2(pt, corners[i]) <= hr*hr) return { type: 'corner', idx: i };
+    if (disabledCorners.has(i)) continue;
+    if (dist2(pt, corners[i]) <= hr*hr) return { type: 'corner', idx: i, mode: cornerModes.get(i) || null };
   }
   const mids = getMidpoints(obj);
   for (let i = 0; i < 4; i++) {
-    // edge i connects corners i and (i+1)%4; blocked if either endpoint corner is locked
-    if (lockedCI.has(i) || lockedCI.has((i + 1) % 4)) continue;
+    if (disabledEdges.has(i)) continue;
     if (dist2(pt, mids[i]) <= hr*hr) return { type: 'edge', idx: i };
   }
   const rh = getRotHandle(obj);
-  if (dist2(pt, rh) <= hr*hr) return { type: 'rotate' };
+  if (!disabledRotate && dist2(pt, rh) <= hr*hr) return { type: 'rotate' };
   if (ptInObj(pt, obj)) return { type: 'move' };
   return null;
 }
@@ -2113,9 +2115,13 @@ function drawSelHandles(ctx, obj) {
   ctx.setLineDash([]);
 
   {
+    const isVehicle = CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type);
+    const { disabledCorners, disabledEdges, cornerModes, disabledRotate } =
+      isVehicle ? _getCarHandleConstraints(obj) : { disabledCorners: new Set(), disabledEdges: new Set(), cornerModes: new Map(), disabledRotate: false };
+
     const rh = getRotHandle(obj);
     // Rotation stem
-    ctx.strokeStyle = '#42a5f5';
+    ctx.strokeStyle = disabledRotate ? '#ffcdd2' : '#42a5f5';
     ctx.lineWidth = lw * 0.7;
     ctx.beginPath();
     ctx.moveTo(topMid.x, topMid.y);
@@ -2123,27 +2129,29 @@ function drawSelHandles(ctx, obj) {
     ctx.stroke();
 
     // Rotation handle circle
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = '#42a5f5';
+    ctx.fillStyle = disabledRotate ? '#ffcdd2' : '#fff';
+    ctx.strokeStyle = disabledRotate ? '#e53935' : '#42a5f5';
     ctx.lineWidth = lw;
     ctx.beginPath();
     ctx.arc(rh.x, rh.y, hr, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
-  }
+    if (disabledRotate) {
+      ctx.strokeStyle = '#e53935'; ctx.lineWidth = lw * 1.5;
+      ctx.beginPath(); ctx.moveTo(rh.x - hr*0.5, rh.y); ctx.lineTo(rh.x + hr*0.5, rh.y); ctx.stroke();
+    }
 
-  {
-    const lockedCI = (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) ? _getLockedBboxCorners(obj) : new Set();
     // Corner handles
     corners.forEach((c, i) => {
-      const locked = lockedCI.has(i);
-      ctx.fillStyle = locked ? '#ffcdd2' : '#fff';
-      ctx.strokeStyle = locked ? '#e53935' : '#42a5f5';
+      const isDisabled   = disabledCorners.has(i);
+      const mode         = cornerModes.get(i);
+      const isRestricted = mode != null;
+      ctx.fillStyle   = isDisabled ? '#ffcdd2' : (isRestricted ? '#fff3e0' : '#fff');
+      ctx.strokeStyle = isDisabled ? '#e53935' : (isRestricted ? '#ff9800' : '#42a5f5');
       ctx.lineWidth = lw;
       ctx.beginPath();
       ctx.arc(c.x, c.y, hr, 0, Math.PI*2);
       ctx.fill(); ctx.stroke();
-      if (locked) {
-        // small lock mark: vertical bar
+      if (isDisabled) {
         ctx.strokeStyle = '#e53935'; ctx.lineWidth = lw * 1.5;
         ctx.beginPath(); ctx.moveTo(c.x, c.y - hr*0.5); ctx.lineTo(c.x, c.y + hr*0.5); ctx.stroke();
       }
@@ -2153,9 +2161,9 @@ function drawSelHandles(ctx, obj) {
     const mids = getMidpoints(obj);
     const hs = 4 / zoom;
     mids.forEach((m, i) => {
-      const edgeLocked = lockedCI.has(i) || lockedCI.has((i + 1) % 4);
-      ctx.fillStyle = edgeLocked ? '#ffcdd2' : '#fff';
-      ctx.strokeStyle = edgeLocked ? '#e53935' : '#42a5f5';
+      const edgeDisabled = disabledEdges.has(i);
+      ctx.fillStyle   = edgeDisabled ? '#ffcdd2' : '#fff';
+      ctx.strokeStyle = edgeDisabled ? '#e53935' : '#42a5f5';
       ctx.lineWidth = lw;
       ctx.beginPath();
       ctx.rect(m.x - hs, m.y - hs, hs * 2, hs * 2);
@@ -2842,6 +2850,71 @@ function _getLockedCornerInfo(car) {
     res.push({ worldX: c.x, worldY: c.y, localX: wx*cos + wy*sin, localY: -wx*sin + wy*cos });
   }
   return res;
+}
+
+// Returns unified handle constraints for a car based on all locked position/size marks.
+// disabledCorners: Set of fully-disabled corner indices
+// disabledEdges: Set of fully-disabled edge indices
+// cornerModes: Map<idx, 'w-only'|'h-only'> for partially-restricted corners
+// disabledRotate: bool
+function _getCarHandleConstraints(car) {
+  const disabledCorners = new Set();
+  const disabledEdges   = new Set();
+  const cornerModes     = new Map();
+  let   disabledRotate  = false;
+
+  for (const o of objects) {
+    if (o.type !== 'position-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+    if (typeof o.cornerIdx !== 'number') continue;
+    const C = o.cornerIdx;
+    disabledCorners.add(C);
+    disabledEdges.add(C);
+    disabledEdges.add((C + 3) % 4);
+    disabledRotate = true;
+    const next     = (C + 1) % 4;
+    const prev     = (C + 3) % 4;
+    // next shares same local-y (C even) or same local-x (C odd)
+    const nextMode = (C % 2 === 0) ? 'w-only' : 'h-only';
+    const prevMode = (C % 2 === 0) ? 'h-only' : 'w-only';
+    if (!disabledCorners.has(next)) {
+      const cur = cornerModes.get(next);
+      cornerModes.set(next, (cur != null && cur !== nextMode) ? null : nextMode);
+    }
+    if (!disabledCorners.has(prev)) {
+      const cur = cornerModes.get(prev);
+      cornerModes.set(prev, (cur != null && cur !== prevMode) ? null : prevMode);
+    }
+  }
+
+  for (const o of objects) {
+    if (o.type !== 'size-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+    if (o.axis === 'length') {
+      // car.w locked → disable edges 1,3; restrict corners to h-only
+      disabledEdges.add(1); disabledEdges.add(3);
+      for (let i = 0; i < 4; i++) {
+        if (disabledCorners.has(i)) continue;
+        const cur = cornerModes.get(i);
+        if (cur === 'w-only') { disabledCorners.add(i); cornerModes.delete(i); }
+        else cornerModes.set(i, 'h-only');
+      }
+    } else if (o.axis === 'width') {
+      // car.h locked → disable edges 0,2; restrict corners to w-only
+      disabledEdges.add(0); disabledEdges.add(2);
+      for (let i = 0; i < 4; i++) {
+        if (disabledCorners.has(i)) continue;
+        const cur = cornerModes.get(i);
+        if (cur === 'h-only') { disabledCorners.add(i); cornerModes.delete(i); }
+        else cornerModes.set(i, 'w-only');
+      }
+    }
+  }
+
+  // null-mode (both-restricted) → fully disable
+  for (const [idx, mode] of cornerModes) {
+    if (mode === null) { disabledCorners.add(idx); cornerModes.delete(idx); }
+  }
+
+  return { disabledCorners, disabledEdges, cornerModes, disabledRotate };
 }
 
 function _posMarkEndpoints(obj) {
@@ -4905,16 +4978,33 @@ function onDown(e) {
         if (hit.type === 'corner') {
           selectState = 'resize'; selectCorner = hit.idx;
           _lockDragInfo = null;
+          _resizeCornerMode = hit.mode || null;
           if (CAR_TYPES.has(orig.type) || MOTO_TYPES.has(orig.type)) {
             const lck = _getLockedCornerInfo(orig);
-            if (lck.length === 1) {
-              anchorWorld = { x: lck[0].worldX, y: lck[0].worldY };
-              _lockDragInfo = { fixedPt: { x: lck[0].worldX, y: lck[0].worldY }, localX: lck[0].localX, localY: lck[0].localY };
+            if (lck.length >= 1) {
+              // Has locked position-mark
+              const lc = lck[0];
+              _lockDragInfo = { fixedPt: { x: lc.worldX, y: lc.worldY }, localX: lc.localX, localY: lc.localY };
+              if (hit.mode) {
+                // Restricted adjacent corner: anchor to normal diagonal so resize math works
+                anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
+              } else {
+                // Unrestricted corner: anchor to locked body corner
+                anchorWorld = { x: lc.worldX, y: lc.worldY };
+              }
+            } else if (hit.mode) {
+              // Size-mark only restriction: anchor to normal diagonal, store for re-anchoring
+              const a = (hit.idx + 2) % 4;
+              anchorWorld = getCorners(orig)[a];
+              const lx = (a === 1 || a === 2) ?  orig.w / 2 : -orig.w / 2;
+              const ly = (a === 2 || a === 3) ?  orig.h / 2 : -orig.h / 2;
+              _lockDragInfo = { fixedPt: { x: anchorWorld.x, y: anchorWorld.y }, localX: lx, localY: ly };
             } else {
               anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
             }
           } else {
             anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
+            _resizeCornerMode = null;
           }
         } else if (hit.type === 'edge') {
           selectState = 'edge'; selectCorner = hit.idx;
@@ -5313,9 +5403,13 @@ function onMove(e) {
       } else {
         resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
       }
-      // After resize, re-anchor locked body corner to its original world position
+      // Enforce dimension restriction for restricted corner modes
+      const orig0r = selectObjOrig[0];
+      if (_resizeCornerMode === 'w-only') obj.h = orig0r.h;
+      else if (_resizeCornerMode === 'h-only') obj.w = orig0r.w;
+      // Re-anchor fixed point (locked body corner or size-mark diagonal anchor)
       if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
-        const ld = _lockDragInfo, orig0 = selectObjOrig[0];
+        const ld = _lockDragInfo, orig0 = orig0r;
         const lxS = ld.localX * obj.w / orig0.w;
         const lyS = ld.localY * obj.h / orig0.h;
         const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
@@ -5615,7 +5709,7 @@ function onUp(e) {
     }
     const _endState = selectState;
     drawing = false; selectState = 'idle';
-    _lockDragInfo = null;
+    _lockDragInfo = null; _resizeCornerMode = null;
     _guideLines = [];
     linkedReflineOrig = null;
     rotLabel.classList.remove('rotating'); // restore interactivity after drag
