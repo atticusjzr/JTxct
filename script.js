@@ -85,6 +85,7 @@ let _dimlineEndDrag  = null; // { objIdx, side: 1|-1, cos, sin } — endpoint re
 let _syncMeasures = false; // sync all measure labels of same vehicle
 let _syncPSMeasures = false; // sync all pos-seg-mark measure labels of same vehicle
 let _syncDimlines = false; // sync all dimline label settings
+let _posSegDragInfo = null; // { px, py, peers:[{idx,origPerp}] }
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -1714,8 +1715,20 @@ function _posSegFeet(obj) {
   return { a: feet[i].f, b: feet[i+1].f };
 }
 
-function syncPosSegBBox(obj) {
+function _posSegDrawEp(obj) {
   const ep = _posSegFeet(obj);
+  if (!ep) return null;
+  const rl = objects.find(o => o.type === 'refline' && o.id === obj.reflineId);
+  const off = obj.perpOffset || 0;
+  if (!rl || off === 0) return ep;
+  const rlDx = rl.x2 - rl.x1, rlDy = rl.y2 - rl.y1;
+  const rlLen = Math.sqrt(rlDx*rlDx + rlDy*rlDy) || 1;
+  const px = -rlDy/rlLen * off, py = rlDx/rlLen * off;
+  return { a: { x: ep.a.x + px, y: ep.a.y + py }, b: { x: ep.b.x + px, y: ep.b.y + py } };
+}
+
+function syncPosSegBBox(obj) {
+  const ep = _posSegDrawEp(obj);
   if (!ep) { obj.x=0; obj.y=0; obj.w=0; obj.h=0; return; }
   const pad = 20;
   obj.x = Math.min(ep.a.x, ep.b.x) - pad;
@@ -1726,13 +1739,13 @@ function syncPosSegBBox(obj) {
 }
 
 function ptOnPosSeg(pt, obj) {
-  const ep = _posSegFeet(obj);
+  const ep = _posSegDrawEp(obj);
   if (!ep) return false;
   return ptNearSeg(pt, ep.a.x, ep.a.y, ep.b.x, ep.b.y, 8 / zoom);
 }
 
 function drawPosSeg(ctx, obj) {
-  const ep = _posSegFeet(obj);
+  const ep = _posSegDrawEp(obj);
   if (!ep) return;
   syncPosSegBBox(obj);
   const { a, b } = ep;
@@ -2392,6 +2405,7 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" value="${obj.color||'#43a047'}" oninput="propSetColor(this.value)" onchange="saveSnap('間距線顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="0.5" max="10" step="0.5" value="${th}" oninput="this.nextElementSibling.value=this.value;propSetPSMThickness(this.value)" style="flex:1;min-width:0"><input type="number" min="0.5" max="10" step="0.5" value="${th}" style="width:44px" onchange="this.previousElementSibling.value=this.value;propSetPSMThickness(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-psm-thsync" checked><span style="font-size:11px;margin-left:4px">同步本物件所有間距線</span></div>`);
+    rows.push(`<div class="prop-row"><label>獨立移動</label><input type="checkbox" ${obj.independent?'checked':''} onchange="propPSMSetIndependent(this.checked)"></div>`);
     if (obj.measure) {
       const m = obj.measure;
       rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-psmsync" ${_syncPSMeasures?'checked':''} onchange="_syncPSMeasures=this.checked"><span style="font-size:11px;margin-left:4px">同步本車所有尺標</span></div>`);
@@ -2738,6 +2752,7 @@ function _applyPSMMeasureSync(obj, fn) {
     objects.filter(o => o !== obj && o.type === 'pos-seg-mark' && o.carId === obj.carId && o.measure).forEach(s => fn(s.measure, s));
   }
 }
+function propPSMSetIndependent(v) { const o=_propObj(); if(o?.type!=='pos-seg-mark')return; o.independent=v; markDirty(); saveSnap('獨立移動'); }
 function propPSMMeasureShow(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; _applyPSMMeasureSync(o,m=>{m.show=v;}); composite();markDirty();saveSnap('尺標顯示');updatePropsPanel(); }
 function propPSMMeasureText(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; const n=parseFloat(v),t=isNaN(n)?'':(+n.toFixed(3)).toString(); _applyPSMMeasureSync(o,m=>{m.text=t;}); composite();markDirty(); }
 function propPSMMeasurePerp(v)  { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; _applyPSMMeasureSync(o,m=>{const mx=m.maxD||40;m.d=Math.max(-mx,Math.min(mx,parseFloat(v)||15));}); composite();markDirty();saveSnap('尺標垂直距'); }
@@ -3508,9 +3523,10 @@ function onDown(e) {
       if (mo.type === 'refline') hit = hitReflineMeasure(mo, pt.x, pt.y);
       else if (mo.type === 'position-mark') hit = hitPosMarkMeasure(mo, pt.x, pt.y);
       else if (mo.type === 'size-mark') hit = hitSizeMarkMeasure(mo, pt.x, pt.y);
+      else if (mo.type === 'pos-seg-mark') hit = hitPosSegMeasure(mo, pt.x, pt.y);
       if (hit) {
         if (!selectedObjs.includes(mi)) { selectedObjs = [mi]; syncSel(); }
-        _measureDrag = { objIdx:mi, startMx:pt.x, startMy:pt.y, startT:mo.measure.t||0.5, startD:mo.measure.d||(mo.type==='position-mark'?15:20) };
+        _measureDrag = { objIdx:mi, startMx:pt.x, startMy:pt.y, startT:mo.measure.t||0.5, startD:mo.measure.d||(mo.type==='position-mark'||mo.type==='pos-seg-mark'?15:20) };
         composite(); return;
       }
     }
@@ -3546,6 +3562,10 @@ function onDown(e) {
         }
         if (objects[i].type === 'size-mark') {
           if (foundPM < 0 && ptOnSizeMark(pt, objects[i])) foundPM = i;
+          continue;
+        }
+        if (objects[i].type === 'pos-seg-mark') {
+          if (foundPM < 0 && ptOnPosSeg(pt, objects[i])) foundPM = i;
           continue;
         }
         const unselTurn = (objects[i].type === 'marking-turn' || objects[i].type === 'marking-chanl') && !selectedObjs.includes(i);
@@ -3644,6 +3664,19 @@ function onDown(e) {
             turnEditMode = 'chanl-cor';
             showTurnValueLabel(getChanlHandles(orig).corner, ((orig.radius || 0)).toFixed(1), 'px');
           }
+        } else if (objects[selectedObjs[0]]?.type === 'pos-seg-mark') {
+          selectState = 'pos-seg-move';
+          const psm = objects[selectedObjs[0]];
+          const rl = objects.find(o => o.type === 'refline' && o.id === psm.reflineId);
+          if (rl) {
+            const rlDx = rl.x2 - rl.x1, rlDy = rl.y2 - rl.y1;
+            const rlLen = Math.sqrt(rlDx*rlDx + rlDy*rlDy) || 1;
+            const px = -rlDy/rlLen, py = rlDx/rlLen;
+            const peers = psm.independent
+              ? [{ idx: selectedObjs[0], origPerp: psm.perpOffset || 0 }]
+              : objects.map((o, i) => o.type === 'pos-seg-mark' && o.carId === psm.carId ? { idx: i, origPerp: o.perpOffset || 0 } : null).filter(Boolean);
+            _posSegDragInfo = { px, py, peers };
+          }
         } else {
           selectState = 'move';
         }
@@ -3736,6 +3769,10 @@ function onMove(e) {
       dx = ep.f.x - ep.c.x; dy = ep.f.y - ep.c.y;
     } else if (mobj.type === 'size-mark') {
       const ep = _sizeMarkEndpoints(mobj);
+      if (!ep) { _measureDrag = null; return; }
+      dx = ep.b.x - ep.a.x; dy = ep.b.y - ep.a.y;
+    } else if (mobj.type === 'pos-seg-mark') {
+      const ep = _posSegDrawEp(mobj);
       if (!ep) { _measureDrag = null; return; }
       dx = ep.b.x - ep.a.x; dy = ep.b.y - ep.a.y;
     } else { _measureDrag = null; return; }
@@ -3887,6 +3924,12 @@ function onMove(e) {
         syncReflineBBox(rl);
       }
       _computeGuides();
+    } else if (selectState === 'pos-seg-move' && _posSegDragInfo) {
+      const dPerp = dx * _posSegDragInfo.px + dy * _posSegDragInfo.py;
+      for (const p of _posSegDragInfo.peers) {
+        if (objects[p.idx]) objects[p.idx].perpOffset = p.origPerp + dPerp;
+      }
+      composite(); return;
     } else if (selectState === 'turn-rot') {
       const obj  = objects[selectedObjs[0]];
       const orig = selectObjOrig[0];
@@ -4199,6 +4242,10 @@ function onUp(e) {
   }
   if (_measureDrag) {
     markDirty(); saveSnap('移動尺標'); _measureDrag = null; composite(); return;
+  }
+  if (_posSegDragInfo) {
+    _posSegDragInfo = null;
+    markDirty(); saveSnap('移動間距線'); composite(); return;
   }
   if (tool === 'select') {
     if (rubberBand) {
@@ -5803,6 +5850,13 @@ function hitSizeMarkMeasure(obj, mx, my) {
   const hw = text.length * sz * 0.38 + 6;
   const hh = sz * 0.7 + 6;
   return Math.abs(mx - pos.x) <= hw && Math.abs(my - pos.y) <= hh;
+}
+
+function hitPosSegMeasure(obj, mx, my) {
+  if (!obj.measure || !obj.measure.show) return false;
+  const L = obj._lastPosSegLabel;
+  if (!L) return false;
+  return Math.abs(mx - L.x) <= L.hw && Math.abs(my - L.y) <= L.hh;
 }
 
 function drawRefLine(ctx, obj) {
