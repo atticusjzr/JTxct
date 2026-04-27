@@ -4751,6 +4751,7 @@ function showCtxMenu(e) {
     if (mo.type === 'refline' && hitReflineMeasure(mo, pt.x, pt.y)) { measureHitIdx = mi; break; }
     if (mo.type === 'position-mark' && hitPosMarkMeasure(mo, pt.x, pt.y)) { measureHitIdx = mi; break; }
     if (mo.type === 'size-mark' && hitSizeMarkMeasure(mo, pt.x, pt.y)) { measureHitIdx = mi; break; }
+    if (mo.type === 'pos-seg-mark' && hitPosSegMeasure(mo, pt.x, pt.y)) { measureHitIdx = mi; break; }
   }
   _ctxMeasureIdx = measureHitIdx;
 
@@ -5133,6 +5134,7 @@ dc.addEventListener('dblclick', e => {
       if (mo.type === 'refline' && hitReflineMeasure(mo, pt.x, pt.y)) { startMeasureEdit(mi); return; }
       if (mo.type === 'position-mark' && hitPosMarkMeasure(mo, pt.x, pt.y)) { startMeasureEdit(mi); return; }
       if (mo.type === 'size-mark' && hitSizeMarkMeasure(mo, pt.x, pt.y)) { startMeasureEdit(mi); return; }
+      if (mo.type === 'pos-seg-mark' && hitPosSegMeasure(mo, pt.x, pt.y)) { startMeasureEdit(mi); return; }
     }
   }
   if (tool !== 'select' || selectedObjs.length !== 1) return;
@@ -5928,6 +5930,26 @@ function drawRefLine(ctx, obj) {
   }
 }
 
+function posSegMeasurePos(obj) {
+  if (!obj.measure) return null;
+  const ep = _posSegDrawEp(obj);
+  if (!ep) return null;
+  const { a, b } = ep;
+  const ddx = b.x - a.x, ddy = b.y - a.y;
+  const len = Math.sqrt(ddx*ddx + ddy*ddy);
+  if (len < 1) return null;
+  const px = -ddy/len, py = ddx/len;
+  const t = obj.measure.t ?? 0.5, d = obj.measure.d ?? 15;
+  return { x: a.x + ddx*t + px*d, y: a.y + ddy*t + py*d };
+}
+function posSegMeasureText(obj) {
+  if (!obj.measure) return '';
+  const ep = _posSegFeet(obj);
+  if (!ep) return '';
+  const dx = ep.b.x - ep.a.x, dy = ep.b.y - ep.a.y;
+  return (Math.sqrt(dx*dx+dy*dy) * 21.0 / H).toFixed(1);
+}
+
 function startMeasureEdit(objIdx) {
   const obj = objects[objIdx];
   if (!obj || !obj.measure) return;
@@ -5936,6 +5958,7 @@ function startMeasureEdit(objIdx) {
   if (obj.type === 'refline') pos = reflineMeasurePos(obj);
   else if (obj.type === 'position-mark') pos = posMarkMeasurePos(obj);
   else if (obj.type === 'size-mark') pos = sizeMarkMeasurePos(obj);
+  else if (obj.type === 'pos-seg-mark') pos = posSegMeasurePos(obj);
   if (!pos) return;
   const existing = document.getElementById('measure-edit-inp');
   if (existing) existing.remove();
@@ -5944,6 +5967,7 @@ function startMeasureEdit(objIdx) {
   inp.type = 'text';
   if (obj.type === 'refline') inp.value = obj.measure.text || reflineMeasureText(obj);
   else if (obj.type === 'size-mark') inp.value = obj.measure.text || sizeMarkMeasureText(obj);
+  else if (obj.type === 'pos-seg-mark') inp.value = obj.measure.text || posSegMeasureText(obj);
   else inp.value = obj.measure.text || posMarkMeasureText(obj);
   const sz = (obj.measure.size || 11) * zoom;
   inp.style.cssText = `position:absolute;left:${Math.round((pos.x+CANVAS_MARGIN)*zoom-60)}px;top:${Math.round((pos.y+CANVAS_MARGIN)*zoom-14)}px;width:120px;background:#fff;border:2px solid #5c6bc0;border-radius:4px;padding:2px 6px;font-size:${sz}px;text-align:center;z-index:500;outline:none;box-sizing:border-box;`;
