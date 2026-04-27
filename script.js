@@ -379,7 +379,7 @@ function drawDimline(ctx, obj) {
 
   // Label at midpoint
   const mx = (ep.x1 + ep.x2) / 2, my = (ep.y1 + ep.y2) / 2;
-  const labelText = ep.length + 'px';
+  const labelText = (ep.length * 21.0 / H).toFixed(1) + 'cm';
   const fontSize = Math.max(10, Math.min(14, len * 0.07));
   ctx.font = `bold ${fontSize}px sans-serif`;
   const tw = ctx.measureText(labelText).width;
