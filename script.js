@@ -5067,9 +5067,10 @@ function _drawHatch(ctx, buildClip, minX, minY, maxX, maxY, angle, spacing, lw, 
   const rad = (angle ?? 45) * Math.PI / 180;
   const cosA = Math.cos(rad), sinA = Math.sin(rad);
   const nx = -sinA, ny = cosA;
-  const cs = [[minX,minY],[maxX,minY],[maxX,maxY],[minX,maxY]].map(([x,y]) => x*nx + y*ny);
+  const corners = [[minX,minY],[maxX,minY],[maxX,maxY],[minX,maxY]];
+  const cs = corners.map(([x,y]) => x*nx + y*ny);
   const cMin = Math.min(...cs), cMax = Math.max(...cs);
-  const ext = Math.max(maxX-minX, maxY-minY) + spacing * 2;
+  const ext = Math.max(...corners.map(([x,y]) => Math.abs(x*cosA + y*sinA))) + spacing;
   ctx.save();
   buildClip();
   ctx.clip();
