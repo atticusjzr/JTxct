@@ -1339,10 +1339,10 @@ function composite() {
   // Draw smart guide lines
   if (_guideLines.length) {
     dCtx.save();
-    dCtx.strokeStyle = '#ff4fa0';
     dCtx.lineWidth = 1 / zoom;
     dCtx.setLineDash([]);
     _guideLines.forEach(g => {
+      dCtx.strokeStyle = g.color || '#ff4fa0';
       dCtx.beginPath();
       if (g.axis === 'x') { dCtx.moveTo(g.val, -CANVAS_MARGIN); dCtx.lineTo(g.val, H + CANVAS_MARGIN); }
       else                { dCtx.moveTo(-CANVAS_MARGIN, g.val); dCtx.lineTo(W + CANVAS_MARGIN, g.val); }
@@ -2814,6 +2814,96 @@ function _computeGuides() {
   }
 }
 
+function _computeResizeGuides() {
+  _guideLines = [];
+  const THR = 8 / zoom;
+  const selSet = new Set(selectedObjs);
+
+  // Current AABB of the resized object(s)
+  let mBox;
+  if (selectedObjs.length === 1) {
+    mBox = _getObjAABB(objects[selectedObjs[0]]);
+  } else {
+    mBox = getGroupBBox();
+  }
+  if (!mBox) return;
+
+  const mEdgesX = [mBox.x, mBox.x + mBox.w / 2, mBox.x + mBox.w];
+  const mEdgesY = [mBox.y, mBox.y + mBox.h / 2, mBox.y + mBox.h];
+
+  // Collect candidates from non-selected objects
+  const candX = [], candY = [];
+  objects.forEach((obj, i) => {
+    if (selSet.has(i)) return;
+    const bb = _getObjAABB(obj);
+    if (!bb) return;
+    candX.push(bb.x, bb.x + bb.w / 2, bb.x + bb.w);
+    candY.push(bb.y, bb.y + bb.h / 2, bb.y + bb.h);
+  });
+
+  const xSnaps = [], ySnaps = [];
+  mEdgesX.forEach(mx => { candX.forEach(cx => { if (Math.abs(mx - cx) < THR) xSnaps.push(cx); }); });
+  mEdgesY.forEach(my => { candY.forEach(cy => { if (Math.abs(my - cy) < THR) ySnaps.push(cy); }); });
+
+  [...new Set(xSnaps)].forEach(v => _guideLines.push({ axis: 'x', val: v, color: '#ff8c00' }));
+  [...new Set(ySnaps)].forEach(v => _guideLines.push({ axis: 'y', val: v, color: '#ff8c00' }));
+
+  // Snap only for axis-aligned objects (rotation ≈ 0)
+  if (selectedObjs.length !== 1) return;
+  const obj = objects[selectedObjs[0]];
+  if (!obj || obj.type === 'marking-turn' || obj.type === 'marking-chanl') return;
+  const rot = obj.rotation || 0;
+  if (Math.abs(rot % (Math.PI / 2)) > 0.05) return; // skip non-orthogonal
+
+  // Determine which edges are being dragged
+  const isEven90 = Math.abs(rot % Math.PI) < 0.05; // 0° or 180°
+  let movingX = [], movingY = [];
+  if (selectState === 'resize') {
+    const moving = [[['left'],['top']],[['right'],['top']],[['right'],['bottom']],[['left'],['bottom']]];
+    const m = moving[selectCorner] || [];
+    m.forEach(([edge]) => { if (edge === 'left' || edge === 'right') movingX.push(edge); else movingY.push(edge); });
+  } else if (selectState === 'edge') {
+    const map = isEven90
+      ? {0:'top', 1:'right', 2:'bottom', 3:'left'}
+      : {0:'left', 1:'top', 2:'right', 3:'bottom'};
+    const e = map[selectCorner];
+    if (e === 'left' || e === 'right') movingX.push(e); else movingY.push(e);
+  }
+
+  // Snap X edges
+  if (movingX.length && xSnaps.length) {
+    let bestDx = Infinity, bestVal = 0;
+    movingX.forEach(edge => {
+      const curVal = edge === 'left' ? obj.x : obj.x + obj.w;
+      candX.forEach(cx => {
+        const d = cx - curVal;
+        if (Math.abs(d) < Math.abs(bestDx)) { bestDx = d; bestVal = cx; }
+      });
+    });
+    if (Math.abs(bestDx) < THR) {
+      const edge = movingX[0];
+      if (edge === 'left') { obj.w = Math.max(20, obj.w - bestDx); obj.x = bestVal; }
+      else                 { obj.w = Math.max(20, obj.w + bestDx); }
+    }
+  }
+  // Snap Y edges
+  if (movingY.length && ySnaps.length) {
+    let bestDy = Infinity;
+    movingY.forEach(edge => {
+      const curVal = edge === 'top' ? obj.y : obj.y + obj.h;
+      candY.forEach(cy => {
+        const d = cy - curVal;
+        if (Math.abs(d) < Math.abs(bestDy)) bestDy = d;
+      });
+    });
+    if (Math.abs(bestDy) < THR) {
+      const edge = movingY[0];
+      if (edge === 'top') { obj.h = Math.max(20, obj.h - bestDy); obj.y += bestDy; }
+      else                { obj.h = Math.max(20, obj.h + bestDy); }
+    }
+  }
+}
+
 function drawGroupOutline(ctx) {
   const lw = 1.5 / zoom;
   const hr = 5  / zoom;
@@ -4226,6 +4316,7 @@ function onMove(e) {
           objects[idx].y = anchorWorld.y + (origCy - anchorWorld.y) * scale - nh / 2;
         }
       });
+      _computeResizeGuides();
       composite(); return;
     }
 
@@ -4350,6 +4441,7 @@ function onMove(e) {
       } else {
         resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
       }
+      _computeResizeGuides();
     } else if (selectState === 'edge') {
       const obj = objects[selectedObjs[0]];
       const _boxMarking = new Set(['marking-grid','marking-moto-zone','marking-parking',
@@ -4371,6 +4463,7 @@ function onMove(e) {
       } else {
         resizeEdge(obj, selectCorner, pt.x, pt.y);
       }
+      _computeResizeGuides();
     } else if (selectState === 'rotate') {
       const orig = selectObjOrig[0];
       const cx = orig.x + orig.w / 2, cy = orig.y + orig.h / 2;
