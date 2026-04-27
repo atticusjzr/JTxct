@@ -1258,6 +1258,8 @@ let _specialEditIdx = -1;  // declared early to avoid TDZ when applyZoom() runs 
 let _seoFocusedKey = null;
 let _measureDrag = null;   // { objIdx, startMx, startMy, startT, startD }
 let _dimlineLabelDrag = null; // { objIdx, startMx, startMy, startT, startD, ep }
+let _syncMeasures = false; // sync all measure labels of same vehicle
+let _syncDimlines = false; // sync all dimline label settings
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -1599,11 +1601,15 @@ function drawDimline(ctx, obj) {
   // Cache label bounds for dblclick/drag hit testing
   obj._lastLabelPos = { x: lx, y: ly, hw: tw / 2 + PAD, hh: fontSize / 2 + PAD, defaultD };
 
-  // White background
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.fillRect(lx - tw / 2 - PAD, ly - fontSize / 2 - PAD, tw + PAD * 2, fontSize + PAD * 2);
-
-  ctx.fillStyle = color;
+  const labelColor = obj.labelColor || color;
+  const actualFontSize = obj.labelSize || fontSize;
+  if (actualFontSize !== fontSize) { ctx.font = `bold ${actualFontSize}px sans-serif`; }
+  if (!obj.labelNoBg) {
+    const bgC = obj.labelBgColor || '#ffffff';
+    ctx.fillStyle = bgC === '#ffffff' ? 'rgba(255,255,255,0.88)' : bgC;
+    ctx.fillRect(lx - tw / 2 - PAD, ly - actualFontSize / 2 - PAD, tw + PAD * 2, actualFontSize + PAD * 2);
+  }
+  ctx.fillStyle = labelColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(labelText, lx, ly);
@@ -3397,6 +3403,7 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-sm-thsync" checked><span style="font-size:11px;margin-left:4px">同步本物件長寬線</span></div>`);
     if (obj.measure) {
       const m = obj.measure;
+      rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-msync" ${_syncMeasures?'checked':''} onchange="_syncMeasures=this.checked"><span style="font-size:11px;margin-left:4px">同步本車所有尺標</span></div>`);
       rows.push(`<div class="prop-row"><label>尺標顯示</label><input type="checkbox" ${m.show?'checked':''} onchange="propSMMeasureShow(this.checked)"></div>`);
       rows.push(`<div class="prop-row"><label>尺標數字</label><input type="number" id="pr-smtext" min="0" step="0.001" value="${m.text||''}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" placeholder="自動" oninput="propSMMeasureText(this.value)"></div>`);
       rows.push(`<div class="prop-row"><label>尺標垂直距</label><input type="number" id="pr-smperp" min="-200" max="200" value="${Math.round(m.d||15)}" onchange="propSMMeasurePerp(this.value)"><span class="prop-val">px</span></div>`);
@@ -3426,6 +3433,7 @@ function updatePropsPanel() {
   // Position-mark measure
   if (t === 'position-mark' && obj.measure) {
     const m = obj.measure;
+    rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-msync" ${_syncMeasures?'checked':''} onchange="_syncMeasures=this.checked"><span style="font-size:11px;margin-left:4px">同步本車所有尺標</span></div>`);
     rows.push(`<div class="prop-row"><label>尺標顯示</label><input type="checkbox" ${m.show?'checked':''} onchange="propPMeasureShow(this.checked)"></div>`);
     rows.push(`<div class="prop-row"><label>尺標數字</label><input type="number" id="pr-pmtext" min="0" step="0.001" value="${m.text||''}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" placeholder="自動" oninput="propPMeasureText(this.value)"></div>`);
     rows.push(`<div class="prop-row"><label>尺標垂直距</label><input type="number" id="pr-pmperp" min="-200" max="200" value="${Math.round(m.d||15)}" onchange="propPMeasurePerp(this.value)"><span class="prop-val">px</span></div>`);
@@ -3475,6 +3483,15 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" id="pr-color" value="${obj.color||'#e53935'}" oninput="propSetColor(this.value)" onchange="saveSnap('尺寸線顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>粗細</label><input type="range" min="0.5" max="6" step="0.5" value="${obj.thickness||1.5}" oninput="propSetThicknessLive(this.value)" onchange="saveSnap('尺寸線粗細')"><span class="prop-val">${obj.thickness||1.5}px</span></div>`);
     rows.push(`<div class="prop-row"><label>自動偵測</label><input type="checkbox" ${obj.autoAdapt!==false?'checked':''} onchange="propDimlineAutoAdapt(this.checked)"><span style="font-size:11px;color:var(--dim);margin-left:4px">${obj.autoAdapt!==false?'開啟（右鍵可關閉）':'關閉（右鍵可開啟）'}</span></div>`);
+    rows.push('<div style="font-size:11px;font-weight:600;color:var(--text2,#888);padding:6px 0 2px">數字標籤</div>');
+    rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-dlsync" ${_syncDimlines?'checked':''} onchange="_syncDimlines=this.checked"><span style="font-size:11px;margin-left:4px">同步全部尺寸線</span></div>`);
+    const lc = obj.labelColor || obj.color || '#e53935';
+    const ls = obj.labelSize || '';
+    const lnb = !!obj.labelNoBg;
+    const lbg = obj.labelBgColor || '#ffffff';
+    rows.push(`<div class="prop-row"><label>數字顏色</label><input type="color" id="pr-dlcolor" value="${lc}" oninput="propDimlineLabelColor(this.value)" onchange="saveSnap('數字顏色')"></div>`);
+    rows.push(`<div class="prop-row"><label>數字大小</label><input type="number" id="pr-dlsize" min="8" max="48" value="${ls}" placeholder="自動" onchange="propDimlineLabelSize(this.value)"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>數字底色</label><input type="checkbox" ${lnb?'checked':''} onchange="propDimlineLabelNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-dlbgcolor" value="${lbg}" ${lnb?'disabled':''} oninput="propDimlineLabelBgColor(this.value)" onchange="saveSnap('數字底色')"></div>`);
   }
 
   // Moto variant
@@ -3673,20 +3690,33 @@ function ctxToggleDimlineAdapt() {
   updatePropsPanel();
   hideCtxMenu();
 }
+function _siblingsWithMeasure(obj) {
+  if (!obj.carId) return [];
+  return objects.filter(o => o !== obj && (o.type === 'position-mark' || o.type === 'size-mark') && o.carId === obj.carId && o.measure);
+}
+function _applyMeasureSync(obj, fn) {
+  fn(obj.measure, obj);
+  if (_syncMeasures) _siblingsWithMeasure(obj).forEach(s => fn(s.measure, s));
+}
+function _applyDimlineSync(obj, fn) {
+  fn(obj);
+  if (_syncDimlines) objects.filter(d => d.type === 'dimline' && d !== obj).forEach(fn);
+}
+
 function propMeasureShow(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
 function propMeasureText(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.text=v;composite();markDirty();} }
 function propMeasurePerp(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){const maxD=o.measure.maxD||60;o.measure.d=Math.max(-maxD,Math.min(maxD,parseFloat(v)||20));composite();markDirty();saveSnap('尺標垂直距');} }
 function propMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){const newMax=Math.max(10,parseFloat(v)||60);o.measure.maxD=newMax;o.measure.d=Math.max(-newMax,Math.min(newMax,o.measure.d??20));composite();markDirty();saveSnap('尺標最大垂距');} }
 function propMeasureColor(v) { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.color=v;composite();markDirty();} }
 function propMeasureSize(v)  { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.size=Math.max(8,Math.min(48,parseFloat(v)||11));composite();markDirty();saveSnap('尺標大小');} }
-function propPMeasureShow(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
-function propPMeasureText(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){const n=parseFloat(v);o.measure.text=isNaN(n)?'':(+n.toFixed(3)).toString();composite();markDirty();} }
-function propPMeasurePerp(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){const maxD=o.measure.maxD||40;o.measure.d=Math.max(-maxD,Math.min(maxD,parseFloat(v)||15));composite();markDirty();saveSnap('尺標垂直距');} }
-function propPMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){const newMax=Math.max(10,parseFloat(v)||40);o.measure.maxD=newMax;o.measure.d=Math.max(-newMax,Math.min(newMax,o.measure.d??15));composite();markDirty();saveSnap('尺標最大垂距');} }
-function propPMeasureColor(v) { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.color=v;composite();markDirty();} }
-function propPMeasureSize(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.size=Math.max(8,Math.min(48,parseFloat(v)||11));composite();markDirty();saveSnap('尺標大小');} }
-function propPMeasureNoBg(v)  { const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.noBg=v;composite();markDirty();saveSnap('尺標底色');updatePropsPanel();} }
-function propPMeasureBgColor(v){ const o=_propObj(); if(o?.type==='position-mark'&&o.measure){o.measure.bgColor=v;composite();markDirty();} }
+function propPMeasureShow(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.show=v;}); composite();markDirty();saveSnap('尺標顯示');updatePropsPanel(); }
+function propPMeasureText(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; const n=parseFloat(v),t=isNaN(n)?'':(+n.toFixed(3)).toString(); _applyMeasureSync(o,m=>{m.text=t;}); composite();markDirty(); }
+function propPMeasurePerp(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; _applyMeasureSync(o,m=>{const mx=m.maxD||40;m.d=Math.max(-mx,Math.min(mx,parseFloat(v)||15));}); composite();markDirty();saveSnap('尺標垂直距'); }
+function propPMeasureMaxD(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; const nm=Math.max(10,parseFloat(v)||40); _applyMeasureSync(o,m=>{m.maxD=nm;m.d=Math.max(-nm,Math.min(nm,m.d??15));}); composite();markDirty();saveSnap('尺標最大垂距'); }
+function propPMeasureColor(v) { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.color=v;}); composite();markDirty(); }
+function propPMeasureSize(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyMeasureSync(o,m=>{m.size=s;}); composite();markDirty();saveSnap('尺標大小'); }
+function propPMeasureNoBg(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.noBg=v;}); composite();markDirty();saveSnap('尺標底色');updatePropsPanel(); }
+function propPMeasureBgColor(v){ const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.bgColor=v;}); composite();markDirty(); }
 function propSetPMThickness(v) {
   const o = _propObj();
   if (!o || o.type !== 'position-mark') return;
@@ -3711,14 +3741,18 @@ function propSetSMThickness(v) {
   }
   composite(); markDirty(); saveSnap('線條粗細');
 }
-function propSMMeasureShow(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.show=v;composite();markDirty();saveSnap('尺標顯示');updatePropsPanel();} }
-function propSMMeasureText(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){const n=parseFloat(v);o.measure.text=isNaN(n)?'':(+n.toFixed(3)).toString();composite();markDirty();} }
-function propSMMeasurePerp(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){const maxD=o.measure.maxD||40;o.measure.d=Math.max(-maxD,Math.min(maxD,parseFloat(v)||15));composite();markDirty();saveSnap('尺標垂直距');} }
-function propSMMeasureMaxD(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){const newMax=Math.max(10,parseFloat(v)||40);o.measure.maxD=newMax;o.measure.d=Math.max(-newMax,Math.min(newMax,o.measure.d??15));composite();markDirty();saveSnap('尺標最大垂距');} }
-function propSMMeasureColor(v) { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.color=v;composite();markDirty();} }
-function propSMMeasureSize(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.size=Math.max(8,Math.min(48,parseFloat(v)||11));composite();markDirty();saveSnap('尺標大小');} }
-function propSMMeasureNoBg(v)  { const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.noBg=v;composite();markDirty();saveSnap('尺標底色');updatePropsPanel();} }
-function propSMMeasureBgColor(v){ const o=_propObj(); if(o?.type==='size-mark'&&o.measure){o.measure.bgColor=v;composite();markDirty();} }
+function propSMMeasureShow(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.show=v;}); composite();markDirty();saveSnap('尺標顯示');updatePropsPanel(); }
+function propSMMeasureText(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; const n=parseFloat(v),t=isNaN(n)?'':(+n.toFixed(3)).toString(); _applyMeasureSync(o,m=>{m.text=t;}); composite();markDirty(); }
+function propSMMeasurePerp(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{const mx=m.maxD||40;m.d=Math.max(-mx,Math.min(mx,parseFloat(v)||15));}); composite();markDirty();saveSnap('尺標垂直距'); }
+function propSMMeasureMaxD(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; const nm=Math.max(10,parseFloat(v)||40); _applyMeasureSync(o,m=>{m.maxD=nm;m.d=Math.max(-nm,Math.min(nm,m.d??15));}); composite();markDirty();saveSnap('尺標最大垂距'); }
+function propSMMeasureColor(v) { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.color=v;}); composite();markDirty(); }
+function propSMMeasureSize(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyMeasureSync(o,m=>{m.size=s;}); composite();markDirty();saveSnap('尺標大小'); }
+function propSMMeasureNoBg(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.noBg=v;}); composite();markDirty();saveSnap('尺標底色');updatePropsPanel(); }
+function propSMMeasureBgColor(v){ const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.bgColor=v;}); composite();markDirty(); }
+function propDimlineLabelColor(v) { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.labelColor=v;}); composite();markDirty(); }
+function propDimlineLabelSize(v)  { const o=_propObj(); if(o?.type!=='dimline')return; const s=Math.max(8,Math.min(48,parseFloat(v)||0)); _applyDimlineSync(o,d=>{d.labelSize=s||null;}); composite();markDirty();saveSnap('數字大小'); }
+function propDimlineLabelNoBg(v)  { const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.labelNoBg=v;}); composite();markDirty();updatePropsPanel(); }
+function propDimlineLabelBgColor(v){ const o=_propObj(); if(o?.type!=='dimline')return; _applyDimlineSync(o,d=>{d.labelBgColor=v;}); composite();markDirty(); }
 function propSetReflineAngle(v) {
   const o = _propObj(); if (!o || o.type !== 'refline') return;
   const rad = parseFloat(v) * Math.PI / 180;
