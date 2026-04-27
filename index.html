@@ -1354,7 +1354,7 @@ function composite() {
   if (pendingDimline && _dimlinePt) {
     const previewObj = {
       type: 'dimline', cx: _dimlinePt.x, cy: _dimlinePt.y,
-      rotation: pendingDimline.rotation, maxLen: H,
+      rotation: pendingDimline.rotation, maxLen: pendingDimline.rotation === 0 ? W : H,
       autoAdapt: true, fixedLen: null,
       color: '#e53935', thickness: 1.5,
     };
@@ -4296,11 +4296,12 @@ function onDown(e) {
 
   // Commit pending dimline on click
   if (pendingDimline) {
-    if (e.button === 2) { pendingDimline = null; _dimlinePt = null; composite(); return; }
+    if (e.button === 2) { setTool('select'); return; }
     if (e.button !== 0) return;
+    const maxLen = pendingDimline.rotation === 0 ? W : H;
     const obj = {
       type: 'dimline', cx: pt.x, cy: pt.y,
-      rotation: pendingDimline.rotation, maxLen: H,
+      rotation: pendingDimline.rotation, maxLen,
       autoAdapt: true, fixedLen: null,
       color: '#e53935', thickness: 1.5,
       layerId: layers[activeIdx].id,
@@ -7652,7 +7653,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && tool === 'select' && selectedObjs.length > 0) {
     e.preventDefault(); ctxDelete();
   }
-  if (e.key === 'Escape') { if (pendingRefline) { cancelPendingRefline(); return; } if (pendingDimline) { pendingDimline = null; _dimlinePt = null; composite(); return; } closeModal(); }
+  if (e.key === 'Escape') { if (pendingRefline) { cancelPendingRefline(); return; } if (pendingDimline) { setTool('select'); return; } closeModal(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); cmdSave(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
