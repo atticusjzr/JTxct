@@ -2377,8 +2377,6 @@ function updatePropsPanel() {
   const NO_COLOR = new Set(['position-mark', 'dimline', 'pos-seg-mark']); // these handle color in their own section
   if (obj.color !== undefined && !NO_COLOR.has(t)) {
     rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-color" value="${obj.color || '#000000'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
-  } else if (t === 'position-mark' && obj.color !== undefined) {
-    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" id="pr-color" value="${obj.color || '#1565c0'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
   }
   if (t === 'size-mark') {
     rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" id="pr-color" value="${obj.color || '#212121'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
@@ -2410,13 +2408,13 @@ function updatePropsPanel() {
   }
   if (t === 'position-mark') {
     const th = obj.thickness || 1.5;
-    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" value="${obj.color||'#1565c0'}" oninput="propSetColor(this.value)" onchange="saveSnap('定位線顏色')"></div>`);
+    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" value="${obj.color||'#1565c0'}" oninput="propSetPMColor(this.value)" onchange="saveSnap('定位線顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="0.5" max="10" step="0.5" value="${th}" oninput="this.nextElementSibling.value=this.value;propSetPMThickness(this.value)" style="flex:1;min-width:0"><input type="number" min="0.5" max="10" step="0.5" value="${th}" style="width:44px" onchange="this.previousElementSibling.value=this.value;propSetPMThickness(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-pm-thsync" checked><span style="font-size:11px;margin-left:4px">同步本物件所有定位線</span></div>`);
   }
   if (t === 'pos-seg-mark') {
     const th = obj.thickness || 1.5;
-    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" value="${obj.color||'#43a047'}" oninput="propSetColor(this.value)" onchange="saveSnap('間距線顏色')"></div>`);
+    rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" value="${obj.color||'#43a047'}" oninput="propSetPSMColor(this.value)" onchange="saveSnap('間距線顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" min="0.5" max="10" step="0.5" value="${th}" oninput="this.nextElementSibling.value=this.value;propSetPSMThickness(this.value)" style="flex:1;min-width:0"><input type="number" min="0.5" max="10" step="0.5" value="${th}" style="width:44px" onchange="this.previousElementSibling.value=this.value;propSetPSMThickness(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label></label><input type="checkbox" id="pr-psm-thsync" checked><span style="font-size:11px;margin-left:4px">同步本物件所有間距線</span></div>`);
     rows.push(`<div class="prop-row"><label>獨立移動</label><input type="checkbox" ${obj.independent?'checked':''} onchange="propPSMSetIndependent(this.checked)"></div>`);
@@ -2724,6 +2722,17 @@ function propPMeasureColor(v) { const o=_propObj(); if(o?.type!=='position-mark'
 function propPMeasureSize(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyMeasureSync(o,m=>{m.size=s;}); composite();markDirty();saveSnap('尺標大小'); }
 function propPMeasureNoBg(v)  { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.noBg=v;}); composite();markDirty();saveSnap('尺標底色');updatePropsPanel(); }
 function propPMeasureBgColor(v){ const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; _applyMeasureSync(o,m=>{m.bgColor=v;}); composite();markDirty(); }
+function propSetPMColor(v) {
+  const o = _propObj();
+  if (!o || o.type !== 'position-mark') return;
+  const sync = document.getElementById('pr-pm-thsync')?.checked ?? true;
+  if (sync && o.carId) {
+    objects.filter(x => x.type === 'position-mark' && x.carId === o.carId).forEach(x => x.color = v);
+  } else {
+    o.color = v;
+  }
+  composite(); markDirty();
+}
 function propSetPMThickness(v) {
   const o = _propObj();
   if (!o || o.type !== 'position-mark') return;
@@ -2747,6 +2756,17 @@ function propSetSMThickness(v) {
     o.thickness = th;
   }
   composite(); markDirty(); saveSnap('線條粗細');
+}
+function propSetPSMColor(v) {
+  const o = _propObj();
+  if (!o || o.type !== 'pos-seg-mark') return;
+  const sync = document.getElementById('pr-psm-thsync')?.checked ?? true;
+  if (sync && o.carId) {
+    objects.filter(x => x.type === 'pos-seg-mark' && x.carId === o.carId).forEach(x => x.color = v);
+  } else {
+    o.color = v;
+  }
+  composite(); markDirty();
 }
 function propSetPSMThickness(v) {
   const o = _propObj();
