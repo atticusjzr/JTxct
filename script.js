@@ -4914,6 +4914,33 @@ function _setArrowToolIcon(selector, img, sx, sy, sw, sh) {
 arrowTurnImg.onload         = () => _setArrowToolIcon('[data-v="arrow-turn"]',         arrowTurnImg,         303, 141, 546, 745);
 arrowStraightTurnImg.onload = () => _setArrowToolIcon('[data-v="arrow-straight-turn"]', arrowStraightTurnImg, 316, 109, 528, 806);
 arrowThreeWayImg.onload     = () => _setArrowToolIcon('[data-v="arrow-three-way"]',     arrowThreeWayImg,     68,  93,  890, 836);
+(function _genHashboxIcon() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 28;
+  const cx = c.getContext('2d');
+  const x = 2, y = 7, w = 24, h = 14;
+  const r = h / 2, bodyW = w - r, ex = x + bodyW, ey = y + r;
+  const lw = 1.5, sp = h * 0.65;
+  cx.save();
+  cx.beginPath();
+  cx.moveTo(x, y); cx.lineTo(ex, y);
+  cx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
+  cx.lineTo(x, y + h); cx.closePath();
+  cx.fillStyle = '#e8e8e8'; cx.fill();
+  cx.clip();
+  cx.strokeStyle = '#333'; cx.lineWidth = lw;
+  for (let off = -h; off < bodyW + h; off += sp) {
+    cx.beginPath(); cx.moveTo(x + off, y + h); cx.lineTo(x + off + h, y); cx.stroke();
+  }
+  cx.restore();
+  cx.strokeStyle = '#333'; cx.lineWidth = lw;
+  cx.beginPath();
+  cx.moveTo(x, y); cx.lineTo(ex, y);
+  cx.arc(ex, ey, r, -Math.PI / 2, Math.PI / 2);
+  cx.lineTo(x, y + h); cx.stroke();
+  const el = document.querySelector('[data-v="hashbox"] .opt-icon-img');
+  if (el) el.src = c.toDataURL();
+})();
 
 function drawMarkingArrow(ctx, obj) {
   const { x, y, w, h, color } = obj;
