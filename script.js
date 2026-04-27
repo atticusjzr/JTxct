@@ -314,6 +314,7 @@ function getDimlineEndpoints(obj) {
 
 function drawDimline(ctx, obj) {
   const ep = getDimlineEndpoints(obj);
+  obj._lastEp = ep; // cache for hit testing
   const dx = ep.x2 - ep.x1, dy = ep.y2 - ep.y1;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len < 1) return;
@@ -378,17 +379,20 @@ function drawDimline(ctx, obj) {
   }
 
   // Label at midpoint
-  const mx = (ep.x1 + ep.x2) / 2, my = (ep.y1 + ep.y2) / 2;
-  const labelText = (ep.length * 21.0 / H).toFixed(1) + 'cm';
+  const midX = (ep.x1 + ep.x2) / 2, midY = (ep.y1 + ep.y2) / 2;
+  const autoVal = (ep.length * 21.0 / H).toFixed(1);
+  const labelText = obj.labelText != null ? obj.labelText : autoVal;
   const fontSize = Math.max(10, Math.min(14, len * 0.07));
   ctx.font = `bold ${fontSize}px sans-serif`;
   const tw = ctx.measureText(labelText).width;
   const LABEL_OFFSET = TICK_HALF + 4 + fontSize / 2;
-  const lx = mx + px * LABEL_OFFSET, ly = my + py * LABEL_OFFSET;
+  const lx = midX + px * LABEL_OFFSET, ly = midY + py * LABEL_OFFSET;
+  const PAD = 3;
+  // Cache label bounds for dblclick hit testing
+  obj._lastLabelPos = { x: lx, y: ly, hw: tw / 2 + PAD, hh: fontSize / 2 + PAD };
 
   // White background
   ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  const PAD = 2;
   ctx.fillRect(lx - tw / 2 - PAD, ly - fontSize / 2 - PAD, tw + PAD * 2, fontSize + PAD * 2);
 
   ctx.fillStyle = color;
@@ -400,9 +404,42 @@ function drawDimline(ctx, obj) {
 }
 
 function ptOnDimline(pt, obj) {
-  const ep = getDimlineEndpoints(obj);
+  const ep = obj._lastEp || getDimlineEndpoints(obj);
   const r = Math.max(6, 8 / zoom);
   return ptNearSeg(pt, ep.x1, ep.y1, ep.x2, ep.y2, r);
+}
+
+function hitDimlineLabel(obj, mx, my) {
+  const p = obj._lastLabelPos;
+  if (!p) return false;
+  return Math.abs(mx - p.x) <= p.hw && Math.abs(my - p.y) <= p.hh;
+}
+
+function startDimlineEdit(objIdx) {
+  const obj = objects[objIdx];
+  if (!obj || obj.type !== 'dimline') return;
+  selectedObjs = [objIdx]; syncSel();
+  const p = obj._lastLabelPos;
+  if (!p) return;
+  const existing = document.getElementById('measure-edit-inp');
+  if (existing) existing.remove();
+  const inp = document.createElement('input');
+  inp.id = 'measure-edit-inp';
+  inp.type = 'text';
+  const autoVal = obj._lastEp ? (obj._lastEp.length * 21.0 / H).toFixed(1) : '';
+  inp.value = obj.labelText != null ? obj.labelText : autoVal;
+  const fs = Math.max(10, 12) * zoom;
+  inp.style.cssText = `position:absolute;left:${Math.round((p.x+CANVAS_MARGIN)*zoom-60)}px;top:${Math.round((p.y+CANVAS_MARGIN)*zoom-14)}px;width:120px;background:#fff;border:2px solid #e53935;border-radius:4px;padding:2px 6px;font-size:${fs}px;text-align:center;z-index:500;outline:none;box-sizing:border-box;`;
+  const commit = () => {
+    const v = inp.value.trim();
+    obj.labelText = v === '' || v === autoVal ? null : v;
+    inp.remove();
+    composite(); markDirty(); saveSnap('編輯尺寸線標籤');
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { inp.remove(); } });
+  inp.addEventListener('blur', commit);
+  const cw = document.getElementById('canvas-wrap');
+  if (cw) { cw.appendChild(inp); inp.focus(); inp.select(); }
 }
 
 function drawDimlineHandles(ctx, obj) {
@@ -4683,6 +4720,7 @@ dc.addEventListener('dblclick', e => {
     for (let mi = objects.length - 1; mi >= 0; mi--) {
       const mo = objects[mi];
       if (mo.type === 'freetext' && ptInObj(pt, mo)) { startFreetextEdit(mi); return; }
+      if (mo.type === 'dimline' && hitDimlineLabel(mo, pt.x, pt.y)) { startDimlineEdit(mi); return; }
       if (mo.type === 'refline' && hitReflineMeasure(mo, pt.x, pt.y)) { startMeasureEdit(mi); return; }
       if (mo.type === 'position-mark' && hitPosMarkMeasure(mo, pt.x, pt.y)) { startMeasureEdit(mi); return; }
       if (mo.type === 'size-mark' && hitSizeMarkMeasure(mo, pt.x, pt.y)) { startMeasureEdit(mi); return; }
