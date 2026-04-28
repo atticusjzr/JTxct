@@ -7522,10 +7522,11 @@ function _applyConstraint(obj, val) {
         const ly1 = -(c.x-cx)*sinR + (c.y-cy)*cosR;
         const d1_tgt = targetPx * Math.sign((c.x-f.x)*nx + (c.y-f.y)*ny || 1);
         const need = d1_tgt - d_ctr;
+        const safe = (v) => Number.isFinite(v) && !Number.isNaN(v);
         // P1: change car.h (center fixed)  d1 = d_ctr + lx1*u + ly1*(h_new/h)*v
         if (Math.abs(ly1 * v_cur) > 1) {
           const h_new = car.h * (need - lx1*u_cur) / (ly1 * v_cur);
-          if (h_new > car.h * 0.2 && h_new < car.h * 5) {
+          if (safe(h_new) && h_new > car.h * 0.2 && h_new < car.h * 5) {
             car.h = h_new;
             car.y = cy - car.h/2;
             return;
@@ -7534,7 +7535,7 @@ function _applyConstraint(obj, val) {
         // P2: change car.w (center fixed)  d1 = d_ctr + lx1*(w_new/w)*u + ly1*v
         if (Math.abs(lx1 * u_cur) > 1) {
           const w_new = car.w * (need - ly1*v_cur) / (lx1 * u_cur);
-          if (w_new > car.w * 0.2 && w_new < car.w * 5) {
+          if (safe(w_new) && w_new > car.w * 0.2 && w_new < car.w * 5) {
             car.w = w_new;
             car.x = cx - car.w/2;
             return;
@@ -7636,12 +7637,13 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
 
   const rhs = d1_target - d0;
   const u_cur = cosR*nx + sinR*ny, v_cur = -sinR*nx + cosR*ny;
+  const safe = (v) => Number.isFinite(v) && !Number.isNaN(v);
 
   // Priority 1: change car.h (rotation & c0 fixed)
   // d1_new = d0 + dlx*u_cur + dly*(h_new/orig_h)*v_cur  →  h_new = orig_h*(rhs-dlx*u_cur)/(dly*v_cur)
   if (Math.abs(dly * v_cur) > dl_mag * 0.01) {
     const h_new = car.h * (rhs - dlx * u_cur) / (dly * v_cur);
-    if (h_new > car.h * 0.2 && h_new < car.h * 5) {
+    if (safe(h_new) && h_new > car.h * 0.2 && h_new < car.h * 5) {
       const orig_h = car.h;
       car.h = h_new;
       const ly0_new = ly0 * h_new / orig_h;
@@ -7652,10 +7654,9 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
   }
 
   // Priority 2: change car.w (rotation & c0 fixed)
-  // d1_new = d0 + dlx*(w_new/orig_w)*u_cur + dly*v_cur  →  w_new = orig_w*(rhs-dly*v_cur)/(dlx*u_cur)
   if (Math.abs(dlx * u_cur) > dl_mag * 0.01) {
     const w_new = car.w * (rhs - dly * v_cur) / (dlx * u_cur);
-    if (w_new > car.w * 0.2 && w_new < car.w * 5) {
+    if (safe(w_new) && w_new > car.w * 0.2 && w_new < car.w * 5) {
       const orig_w = car.w;
       car.w = w_new;
       const lx0_new = lx0 * w_new / orig_w;
@@ -7665,21 +7666,30 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
     }
   }
 
-  // Priority 3: rotation solver
-  if (Math.abs(rhs) > dl_mag * 1.001) return;
-  const a = dlx/dl_mag, b = dly/dl_mag;
-  const proj = Math.max(-1, Math.min(1, rhs/dl_mag));
-  const perp = Math.sqrt(Math.max(0, 1 - proj*proj));
+  // Priority 3: rotation solver (relax edited PM's X assumption)
+  if (Math.abs(rhs) <= dl_mag * 1.001) {
+    const a = dlx/dl_mag, b = dly/dl_mag;
+    const proj = Math.max(-1, Math.min(1, rhs/dl_mag));
+    const perp = Math.sqrt(Math.max(0, 1 - proj*proj));
+    const u1 = proj*a - perp*b, v1 = proj*b + perp*a;
+    const u2 = proj*a + perp*b, v2 = proj*b - perp*a;
+    const usePick1 = (u1-u_cur)**2+(v1-v_cur)**2 <= (u2-u_cur)**2+(v2-v_cur)**2;
+    const u_new = usePick1 ? u1 : u2, v_new = usePick1 ? v1 : v2;
+    if (safe(u_new) && safe(v_new)) {
+      const cosR_new = nx*u_new - ny*v_new, sinR_new = ny*u_new + nx*v_new;
+      const dRot = Math.abs(Math.atan2(sinR_new*cosR - cosR_new*sinR, cosR_new*cosR + sinR_new*sinR));
+      // Reject solutions requiring more than 90° rotation jump (likely the wrong branch)
+      if (dRot < Math.PI / 2) {
+        car.rotation = Math.atan2(sinR_new, cosR_new);
+        car.x = c0.x - (lx0*cosR_new - ly0*sinR_new) - car.w/2;
+        car.y = c0.y - (lx0*sinR_new + ly0*cosR_new) - car.h/2;
+        return;
+      }
+    }
+  }
 
-  const u1 = proj*a - perp*b, v1 = proj*b + perp*a;
-  const u2 = proj*a + perp*b, v2 = proj*b - perp*a;
-  const usePick1 = (u1-u_cur)**2+(v1-v_cur)**2 <= (u2-u_cur)**2+(v2-v_cur)**2;
-  const u_new = usePick1 ? u1 : u2, v_new = usePick1 ? v1 : v2;
-
-  const cosR_new = nx*u_new - ny*v_new, sinR_new = ny*u_new + nx*v_new;
-  car.rotation = Math.atan2(sinR_new, cosR_new);
-  car.x = c0.x - (lx0*cosR_new - ly0*sinR_new) - car.w/2;
-  car.y = c0.y - (lx0*sinR_new + ly0*cosR_new) - car.h/2;
+  // No priority succeeded: geometrically impossible under current locks
+  _showLockBlockedModal([lockedPM]);
 }
 
 function _showLockBlockedModal(lockedPMs) {
