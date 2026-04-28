@@ -6910,6 +6910,15 @@ function openScaleDialog() {
 }
 function toggleConstraintMode() {
   _constraintMode = !_constraintMode;
+  // Switching OFF constraint mode → unlock everything (positions/lengths stay
+  // because we're only clearing the lock flag, not touching geometry).
+  if (!_constraintMode) {
+    let cleared = 0;
+    for (const o of objects) {
+      if (o.constraintLocked) { o.constraintLocked = false; cleared++; }
+    }
+    if (cleared > 0) { markDirty(); composite(); saveSnap('解除所有鎖定'); }
+  }
   const btn = document.getElementById('btn-constraint');
   if (btn) {
     btn.textContent = _constraintMode ? '約束編輯' : '自由編輯';
