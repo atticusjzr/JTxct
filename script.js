@@ -1881,8 +1881,11 @@ function _refreshConstraint(con, car, rl, axes) {
     const xb = (aB.worldX - rl.x1)*tx + (aB.worldY - rl.y1)*ty;
     const xa = (aA.worldX - rl.x1)*tx + (aA.worldY - rl.y1)*ty;
     con.current = xb - xa;
-  } else if (con.type === 'W') con.current = car.w;
-  else if (con.type === 'H') con.current = car.h;
+  } else if (con.type === 'W')  con.current = car.w;
+  else if (con.type === 'H')  con.current = car.h;
+  else if (con.type === 'R')  con.current = car.rotation;
+  else if (con.type === 'CX') con.current = car.x + car.w/2;
+  else if (con.type === 'CY') con.current = car.y + car.h/2;
   return true;
 }
 
@@ -1914,8 +1917,11 @@ function _unifiedSolve(car, rl, constraints) {
         row = [0, 0, da*car.w*v - db*car.h*u, da*u, db*v];
         break;
       }
-      case 'W': row = [0, 0, 0, 1, 0]; break;
-      case 'H': row = [0, 0, 0, 0, 1]; break;
+      case 'W':  row = [0, 0, 0, 1, 0]; break;
+      case 'H':  row = [0, 0, 0, 0, 1]; break;
+      case 'R':  row = [0, 0, 1, 0, 0]; break;
+      case 'CX': row = [1, 0, 0, 0, 0]; break;
+      case 'CY': row = [0, 1, 0, 0, 0]; break;
       default: return null;
     }
     J.push(row);
@@ -2026,6 +2032,27 @@ function _runConstraintEdit(car, rl, locks, editCons, maxIter = 4, tol = 0.5) {
 }
 
 // Build edit constraints for each editable type
+// Drag-time wrapper: if the car has any positional locks, route the drag intent
+// (edit constraints) through the unified solver so other DOFs auto-adjust.
+// Returns true if solver applied successfully (caller skips direct-set);
+// false if no locks (caller should set DOFs directly) or solver failed.
+function _solvedDragEdit(car, editCons) {
+  const hasPosLock = objects.some(o =>
+    (o.type === 'position-mark' || o.type === 'pos-seg-mark')
+    && o.carId === car.id && o.constraintLocked);
+  if (!hasPosLock) return false;
+  const rl = _getCarRefline(car);
+  if (!rl) return false;
+  computeReflineP1(rl);
+  const dx = rl.x2 - rl.x1, dy = rl.y2 - rl.y1;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 1) return false;
+  const axes = { tx: dx/len, ty: dy/len, nx: -dy/len, ny: dx/len };
+  const locks = _collectHardLocks(car, rl, null, axes);
+  // looser tolerance + fewer iterations for live drag
+  return _runConstraintEdit(car, rl, locks, editCons, 2, 1.0);
+}
+
 function _editConsForPM(car, rl, obj, targetPx, axes) {
   if (typeof obj.cornerIdx !== 'number') return null;
   const a = _alphaForCorner(car, obj.mode, obj.cornerIdx);
@@ -4740,16 +4767,29 @@ function onMove(e) {
       selectedObjs.forEach((idx, i) => {
         if (!objects[idx]) return;
         const orig = selectObjOrig[i];
-        objects[idx].x = orig.x + dx;
-        objects[idx].y = orig.y + dy;
-        if (objects[idx].type === 'marking-turn' || objects[idx].type === 'marking-chanl') {
-          objects[idx].cx = orig.cx + dx;
-          objects[idx].cy = orig.cy + dy;
+        const o = objects[idx];
+        const tgtX = orig.x + dx, tgtY = orig.y + dy;
+        if (CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type)) {
+          // Route vehicle move through the solver so locks auto-adjust other DOFs
+          const tgtCx = tgtX + orig.w/2, tgtCy = tgtY + orig.h/2;
+          const editCons = [
+            { type: 'CX', target: tgtCx, current: o.x + o.w/2 },
+            { type: 'CY', target: tgtCy, current: o.y + o.h/2 },
+          ];
+          if (!_solvedDragEdit(o, editCons)) {
+            o.x = tgtX; o.y = tgtY;
+          }
+        } else {
+          o.x = tgtX; o.y = tgtY;
         }
-        if (objects[idx].type === 'dimline') {
-          objects[idx].cx = orig.cx + dx;
-          objects[idx].cy = orig.cy + dy;
-          syncDimlineBBox(objects[idx]);
+        if (o.type === 'marking-turn' || o.type === 'marking-chanl') {
+          o.cx = orig.cx + dx;
+          o.cy = orig.cy + dy;
+        }
+        if (o.type === 'dimline') {
+          o.cx = orig.cx + dx;
+          o.cy = orig.cy + dy;
+          syncDimlineBBox(o);
         }
       });
       // Move linked refline together with its refpoint
@@ -4939,7 +4979,12 @@ function onMove(e) {
       } else {
         let newRot = obj.rotation + delta;
         if (e.shiftKey) newRot = Math.round(newRot / (Math.PI / 12)) * (Math.PI / 12);
-        obj.rotation = newRot;
+        if ((CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))
+            && _solvedDragEdit(obj, [{ type: 'R', target: newRot, current: obj.rotation }])) {
+          // Solver applied rotation + auto-adjusted other DOFs to keep locks
+        } else {
+          obj.rotation = newRot;
+        }
         _posRotLabel(obj);
       }
       rotPrevAngle = currAngle;
