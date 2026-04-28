@@ -4063,6 +4063,20 @@ function onDown(e) {
         } else if (hit.type === 'edge') {
           selectState = 'edge'; selectCorner = hit.idx;
           anchorWorld = getMidpoints(orig)[(hit.idx + 2) % 4];
+          // Edge drag: also anchor to a locked PM endpoint (so wheel-mode PMs / moto wheels
+          // — which sit inside the bbox, not on the edge — don't drift when the bbox edge changes).
+          _lockDragInfo = null;
+          if (CAR_TYPES.has(orig.type) || MOTO_TYPES.has(orig.type)) {
+            const lck = _getLockedCornerInfo(orig);
+            if (lck.length >= 1) {
+              const lc = lck[0];
+              _lockDragInfo = {
+                fixedPt: { x: lc.worldX, y: lc.worldY },
+                localX: lc.localX, localY: lc.localY,
+                cornerIdx: lc.cornerIdx, isMotoWheel: lc.isMotoWheel,
+              };
+            }
+          }
         } else if (hit.type === 'rotate') {
           selectState = 'rotate';
           if (orig.type === 'dimline') {
@@ -4499,6 +4513,21 @@ function onMove(e) {
         }
       } else {
         resizeEdge(obj, selectCorner, pt.x, pt.y);
+      }
+      // Re-anchor to locked PM endpoint (mirror of the corner-drag post-correction)
+      if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
+        const ld = _lockDragInfo, orig0 = selectObjOrig[0];
+        let lxS, lyS;
+        if (ld.isMotoWheel) {
+          const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
+          lxS = r.lx; lyS = r.ly;
+        } else {
+          lxS = ld.localX * obj.w / orig0.w;
+          lyS = ld.localY * obj.h / orig0.h;
+        }
+        const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
+        obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
+        obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
       }
       _computeResizeGuides();
     } else if (selectState === 'move-locked-1' && _lockDragInfo) {
