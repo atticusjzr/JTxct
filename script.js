@@ -1794,6 +1794,39 @@ function _buildCornerLocks(car) {
   };
 }
 
+// Snapshot the X coords of every corner that is hard-X-locked (pos-seg-mark lock).
+// Returned: { map: Map<key, X>, carState: {x,y,w,h,rotation} } — caller restores carState
+// if a tentative edit violates the snapshot.
+function _snapshotHardXLocks(car) {
+  const state = _buildCornerLocks(car);
+  const map = new Map();
+  if (state) {
+    for (const p of state.points) {
+      if (p.xLocked) map.set(p.key, p.X);
+    }
+  }
+  return {
+    map,
+    carState: { x: car.x, y: car.y, w: car.w, h: car.h, rotation: car.rotation },
+  };
+}
+
+// True if every hard-X-locked corner still projects to its snapshotted X (within tolerance).
+function _hardXLocksOK(car, snap) {
+  if (!snap || snap.map.size === 0) return true;
+  const state = _buildCornerLocks(car);
+  if (!state) return true;
+  for (const p of state.points) {
+    if (!snap.map.has(p.key)) continue;
+    if (Math.abs(p.X - snap.map.get(p.key)) > 0.5) return false;
+  }
+  return true;
+}
+
+function _restoreCar(car, snap) {
+  Object.assign(car, snap.carState);
+}
+
 // Recompute the locked anchor's local position for the given car dimensions.
 // Needed because moto side-view wheel ly is non-linear in h (uses min(h*0.19, w*0.12)).
 function _recomputeLockedLocal(ld, w, h, type, variant) {
@@ -6468,6 +6501,7 @@ function _applyConstraint(obj, val) {
     const curPx = Math.sqrt((c.x-f.x)**2 + (c.y-f.y)**2);
     if (curPx < 1) return;
     const delta = targetPx - curPx;
+    const snap = _snapshotHardXLocks(car);
 
     // Priority: change car.h or car.w before translating (keeps foot spacing stable)
     const rl_pm = objects.find(o => o.type === 'refline' && o.id === obj.reflineId);
@@ -6486,29 +6520,35 @@ function _applyConstraint(obj, val) {
         const d1_tgt = targetPx * Math.sign((c.x-f.x)*nx + (c.y-f.y)*ny || 1);
         const need = d1_tgt - d_ctr;
         const safe = (v) => Number.isFinite(v) && !Number.isNaN(v);
-        // P1: change car.h (center fixed)  d1 = d_ctr + lx1*u + ly1*(h_new/h)*v
+        // P1: change car.h (center fixed)
         if (Math.abs(ly1 * v_cur) > 1) {
           const h_new = car.h * (need - lx1*u_cur) / (ly1 * v_cur);
           if (safe(h_new) && h_new > car.h * 0.2 && h_new < car.h * 5) {
             car.h = h_new;
             car.y = cy - car.h/2;
-            return;
+            if (_hardXLocksOK(car, snap)) return;
+            _restoreCar(car, snap);
           }
         }
-        // P2: change car.w (center fixed)  d1 = d_ctr + lx1*(w_new/w)*u + ly1*v
+        // P2: change car.w (center fixed)
         if (Math.abs(lx1 * u_cur) > 1) {
           const w_new = car.w * (need - ly1*v_cur) / (lx1 * u_cur);
           if (safe(w_new) && w_new > car.w * 0.2 && w_new < car.w * 5) {
             car.w = w_new;
             car.x = cx - car.w/2;
-            return;
+            if (_hardXLocksOK(car, snap)) return;
+            _restoreCar(car, snap);
           }
         }
       }
     }
-    // P3: translate
+    // P3: translate (perpendicular to refline preserves all X coords)
     car.x += (c.x-f.x)/curPx * delta;
     car.y += (c.y-f.y)/curPx * delta;
+    if (!_hardXLocksOK(car, snap)) {
+      _restoreCar(car, snap);
+      _showLockBlockedModal([]);
+    }
     return;
   }
 
@@ -6516,10 +6556,13 @@ function _applyConstraint(obj, val) {
     const car = objects.find(o => o.id === obj.carId);
     const ep = _posSegFeet(obj);
     if (!car || !ep || car.constraintLocked) return;
+    if (obj.constraintLocked) { _showLockBlockedModal([obj]); return; }
     const otherLocked = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
     if (otherLocked.length > 0) {
       _showLockBlockedModal(otherLocked); return;
     }
+    const lockedSegs = objects.filter(o => o.type === 'pos-seg-mark' && o !== obj && o.carId === car.id && o.constraintLocked);
+    if (lockedSegs.length > 0) { _showLockBlockedModal(lockedSegs); return; }
     const { a, b } = ep;
     const curPx = Math.sqrt((b.x-a.x)**2 + (b.y-a.y)**2);
     if (curPx < 1) return;
@@ -6534,6 +6577,7 @@ function _applyConstraint(obj, val) {
     if (!car || car.constraintLocked) return;
     const otherLocked = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
     if (otherLocked.length > 1) { _showLockBlockedModal(otherLocked); return; }
+    const snapSize = _snapshotHardXLocks(car);
 
     // Capture locked corner world pos + local pos BEFORE changing dimensions
     const lci = otherLocked.length === 1 ? _getLockedCornerInfo(car) : [];
@@ -6557,6 +6601,11 @@ function _applyConstraint(obj, val) {
       const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
       car.x = lc.worldX - (lxS*cosR - lyS*sinR) - car.w/2;
       car.y = lc.worldY - (lxS*sinR + lyS*cosR) - car.h/2;
+    }
+    if (!_hardXLocksOK(car, snapSize)) {
+      _restoreCar(car, snapSize);
+      const lockedSegs = objects.filter(o => o.type === 'pos-seg-mark' && o.carId === car.id && o.constraintLocked);
+      _showLockBlockedModal(lockedSegs);
     }
   }
 }
@@ -6601,9 +6650,9 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
   const rhs = d1_target - d0;
   const u_cur = cosR*nx + sinR*ny, v_cur = -sinR*nx + cosR*ny;
   const safe = (v) => Number.isFinite(v) && !Number.isNaN(v);
+  const snap = _snapshotHardXLocks(car);
 
   // Priority 1: change car.h (rotation & c0 fixed)
-  // d1_new = d0 + dlx*u_cur + dly*(h_new/orig_h)*v_cur  →  h_new = orig_h*(rhs-dlx*u_cur)/(dly*v_cur)
   if (Math.abs(dly * v_cur) > dl_mag * 0.01) {
     const h_new = car.h * (rhs - dlx * u_cur) / (dly * v_cur);
     if (safe(h_new) && h_new > car.h * 0.2 && h_new < car.h * 5) {
@@ -6612,7 +6661,8 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
       const ly0_new = ly0 * h_new / orig_h;
       car.x = c0.x - (lx0*cosR - ly0_new*sinR) - car.w/2;
       car.y = c0.y - (lx0*sinR + ly0_new*cosR) - car.h/2;
-      return;
+      if (_hardXLocksOK(car, snap)) return;
+      _restoreCar(car, snap);
     }
   }
 
@@ -6625,11 +6675,12 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
       const lx0_new = lx0 * w_new / orig_w;
       car.x = c0.x - (lx0_new*cosR - ly0*sinR) - car.w/2;
       car.y = c0.y - (lx0_new*sinR + ly0*cosR) - car.h/2;
-      return;
+      if (_hardXLocksOK(car, snap)) return;
+      _restoreCar(car, snap);
     }
   }
 
-  // Priority 3: rotation solver (relax edited PM's X assumption)
+  // Priority 3: rotation solver (changes edited corner's X — likely violates pos-seg-mark X locks)
   if (Math.abs(rhs) <= dl_mag * 1.001) {
     const a = dlx/dl_mag, b = dly/dl_mag;
     const proj = Math.max(-1, Math.min(1, rhs/dl_mag));
@@ -6641,17 +6692,17 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
     if (safe(u_new) && safe(v_new)) {
       const cosR_new = nx*u_new - ny*v_new, sinR_new = ny*u_new + nx*v_new;
       const dRot = Math.abs(Math.atan2(sinR_new*cosR - cosR_new*sinR, cosR_new*cosR + sinR_new*sinR));
-      // Reject solutions requiring more than 90° rotation jump (likely the wrong branch)
       if (dRot < Math.PI / 2) {
         car.rotation = Math.atan2(sinR_new, cosR_new);
         car.x = c0.x - (lx0*cosR_new - ly0*sinR_new) - car.w/2;
         car.y = c0.y - (lx0*sinR_new + ly0*cosR_new) - car.h/2;
-        return;
+        if (_hardXLocksOK(car, snap)) return;
+        _restoreCar(car, snap);
       }
     }
   }
 
-  // No priority succeeded: geometrically impossible under current locks
+  // No priority succeeded under current locks
   _showLockBlockedModal([lockedPM]);
 }
 
