@@ -139,7 +139,7 @@ class Layer {
 }
 
 // Types that don't count as dimline obstacles
-const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline','position-mark','size-mark','pos-seg-mark']);
+const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline','position-mark','size-mark','pos-seg-mark','scalebar']);
 function _isObstacle(obj) { return !_NON_OBSTACLE.has(obj.type) && !obj.specialRole; }
 
 // ── Composite ────────────────────────────────────────────
@@ -759,6 +759,8 @@ function drawObjOnCtx(ctx, obj) {
     drawHydrant(ctx, obj.x, obj.y, obj.w, obj.h, obj.color);
   } else if (obj.type === 'compass') {
     drawCompass(ctx, obj.x, obj.y, obj.w, obj.h, obj.color);
+  } else if (obj.type === 'scalebar') {
+    drawScalebar(ctx, obj);
   } else if (obj.type === 'refpoint') {
     drawRefPoint(ctx, obj.x, obj.y, obj.w, obj.h, obj.color, obj.thickness, obj.style);
   } else if (obj.type === 'refline') {
@@ -850,6 +852,13 @@ function hitHandle(pt, obj) {
   }
   if (obj.type === 'refline')   return hitReflineHandle(pt, obj);
   if (obj.type === 'reflabel')  return ptInObj(pt, obj) ? { type: 'reflabel-orbit' } : null;
+  if (obj.type === 'scalebar') {
+    const hr2 = (5/zoom)**2;
+    const cs = getCorners(obj);
+    for (let i = 0; i < 4; i++) { if (dist2(pt, cs[i]) <= hr2) return { type:'corner', idx:i }; }
+    if (ptInObj(pt, obj)) return { type:'move' };
+    return null;
+  }
   if (obj.type === 'marking-turn') {
     const th = hitTurnHandle(pt, obj);
     if (th) return th;
@@ -923,6 +932,18 @@ function drawSelHandles(ctx, obj) {
     ctx.setLineDash([4 / zoom, 3 / zoom]);
     ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
     ctx.setLineDash([]);
+    ctx.restore(); return;
+  }
+  if (obj.type === 'scalebar') {
+    const corners = getCorners(obj);
+    const hr = 5 / zoom, lw = 1.5 / zoom;
+    ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw; ctx.setLineDash([5/zoom, 3/zoom]);
+    ctx.beginPath(); corners.forEach((c,i) => i===0?ctx.moveTo(c.x,c.y):ctx.lineTo(c.x,c.y)); ctx.closePath(); ctx.stroke();
+    ctx.setLineDash([]);
+    corners.forEach(c => {
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.arc(c.x, c.y, hr, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    });
     ctx.restore(); return;
   }
 
@@ -3133,6 +3154,7 @@ const OBJ_TYPE_NAMES = {
   'marking-arrow':'直行箭頭', 'marking-arrow-turn':'轉向箭頭', 'marking-arrow-straight-turn':'直行轉向箭頭', 'marking-arrow-three-way':'三向箭頭', 'marking-sepisle':'分隔島', 'marking-chanl':'槽化線',
   'freetext': '文字', 'image': '圖片',
   'dimline': '尺寸線',
+  'scalebar': '圖示比例尺',
 };
 
 function updatePropsPanel() {
@@ -3172,8 +3194,8 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="range" min="0" max="359" step="1" value="${deg}" oninput="this.nextElementSibling.value=this.value;propSetRotationLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-rotation" min="0" max="359" step="1" value="${deg}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetRotationLive(this.value)" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
   }
 
-  // Flip (all types except refline/reflabel which have complex geometry)
-  if (t !== 'refline' && t !== 'reflabel') {
+  // Flip (all types except refline/reflabel/scalebar which have complex geometry or no meaning)
+  if (t !== 'refline' && t !== 'reflabel' && t !== 'scalebar') {
     const fh = !!obj.flipH, fv = !!obj.flipV;
     rows.push(`<div class="prop-row"><label>翻轉</label><div style="display:flex;gap:4px">
       <button class="btn sm${fh?' active':''}" onclick="propToggleFlip('flipH')" title="水平翻轉 ↔" style="font-size:15px;padding:1px 8px">↔</button>
@@ -3755,7 +3777,7 @@ function resizeCorner(obj, ci, mx, my, shiftKey) {
 
   let nw = Math.abs(lx), nh = Math.abs(ly);
 
-  if (shiftKey) {
+  if (shiftKey || obj.type === 'scalebar') {
     const aspect = orig.w / orig.h;
     if (nw / nh > aspect) nh = nw / aspect; else nw = nh * aspect;
   }
@@ -4678,7 +4700,7 @@ function onDown(e) {
     return; // handled via drag in onMove/onUp
   }
 
-  if (tool === 'car' || tool === 'moto' || tool === 'marking' || tool === 'marking-text' || tool === 'hydrant' || tool === 'compass' || tool === 'refpoint') return;
+  if (tool === 'car' || tool === 'moto' || tool === 'marking' || tool === 'marking-text' || tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar') return;
 
   const l = layers[activeIdx];
   if (!l?.visible) return;
@@ -5142,16 +5164,17 @@ function onMove(e) {
     return;
   }
 
-  if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint') {
+  if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar') {
     shapePt = pt;
     const rx = Math.min(lastPt.x, pt.x), ry = Math.min(lastPt.y, pt.y);
     const rw = Math.abs(pt.x - lastPt.x), rh = Math.abs(pt.y - lastPt.y);
     composite();
     if (rw > 8 && rh > 8) {
       dCtx.save(); dCtx.translate(CANVAS_MARGIN, CANVAS_MARGIN); dCtx.globalAlpha = 0.72;
-      if (tool === 'hydrant')       drawHydrant(dCtx, rx, ry, rw, rh, '#c62828');
-      else if (tool === 'compass')  drawCompass(dCtx, rx, ry, rw, rh, '#212121');
-      else                          drawRefPoint(dCtx, rx, ry, rw, rh, '#212121', 3);
+      if (tool === 'hydrant')        drawHydrant(dCtx, rx, ry, rw, rh, '#c62828');
+      else if (tool === 'compass')   drawCompass(dCtx, rx, ry, rw, rh, '#212121');
+      else if (tool === 'scalebar')  drawScalebar(dCtx, { x:rx, y:ry, w:rw, h:rh, color:'#212121' });
+      else                           drawRefPoint(dCtx, rx, ry, rw, rh, '#212121', 3);
       dCtx.restore();
     }
     return;
@@ -5376,7 +5399,7 @@ function onUp(e) {
     }
     shapePt = null;
     composite();
-  } else if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint') {
+  } else if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar') {
     if (tool === 'refpoint' && objects.some(o => o.type === 'refpoint')) {
       shapePt = null; composite();
     } else {
@@ -5384,8 +5407,13 @@ function onUp(e) {
       if (pt2 && lastPt) {
         const rx = Math.min(lastPt.x, pt2.x), ry = Math.min(lastPt.y, pt2.y);
         const rw = Math.abs(pt2.x - lastPt.x), rh = Math.abs(pt2.y - lastPt.y);
-        const dw = tool === 'hydrant' ? 50 : 60, dh = tool === 'hydrant' ? 80 : 60;
-        const fw = rw > 10 ? rw : dw, fh = rh > 10 ? rh : dh;
+        const sbDefW = Math.round(PX_PER_CM * 5), sbDefH = Math.round(PX_PER_CM * 0.9);
+        const dw = tool === 'hydrant' ? 50 : tool === 'scalebar' ? sbDefW : 60;
+        const dh = tool === 'hydrant' ? 80 : tool === 'scalebar' ? sbDefH : 60;
+        const fw = rw > 10 ? rw : dw;
+        const fh = tool === 'scalebar'
+          ? (rw > 10 ? Math.round(rw * sbDefH / sbDefW) : dh)  // maintain aspect when dragged
+          : (rh > 10 ? rh : dh);
         const fx = rw > 10 ? rx : lastPt.x - fw/2, fy = rh > 10 ? ry : lastPt.y - fh/2;
         const clr = tool === 'hydrant' ? '#c62828' : '#212121';
         const thick = tool === 'refpoint' ? 3 : undefined;
@@ -6876,6 +6904,56 @@ function drawCompass(ctx, x, y, w, h, color) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.setLineDash([]);
   ctx.fillText('N', cx, cy - tip * 0.52);
+}
+
+function drawScalebar(ctx, obj) {
+  const clr = obj.color || '#212121';
+  const totalM = obj.w / PX_PER_CM * _scale / 100;
+  if (totalM <= 0) return;
+
+  // Largest nice segment that gives at least 2 segments
+  const steps = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  let segM = steps[0];
+  for (const s of steps) { if (s * 2 <= totalM) segM = s; }
+  const nSegs = Math.max(1, Math.min(Math.floor(totalM / segM), 10));
+  const segPx = segM * PX_PER_CM * 100 / _scale;
+  const barPx = nSegs * segPx;
+
+  const barH = obj.h * 0.52;
+  const barX = obj.x;
+  const barY = obj.y + (obj.h - barH) * 0.3;
+  const fs   = Math.max(7, Math.min(12, obj.h * 0.32));
+  const lw   = Math.max(0.8, barH * 0.07);
+
+  ctx.save();
+
+  // Alternating segments
+  for (let i = 0; i < nSegs; i++) {
+    ctx.fillStyle = i % 2 === 0 ? clr : '#ffffff';
+    ctx.fillRect(barX + i * segPx, barY, segPx, barH);
+  }
+  // Border + dividers
+  ctx.strokeStyle = clr; ctx.lineWidth = lw; ctx.setLineDash([]);
+  ctx.strokeRect(barX, barY, barPx, barH);
+  for (let i = 1; i < nSegs; i++) {
+    const sx = barX + i * segPx;
+    ctx.beginPath(); ctx.moveTo(sx, barY); ctx.lineTo(sx, barY + barH); ctx.stroke();
+  }
+
+  // Labels below bar
+  ctx.font = `${fs}px sans-serif`;
+  ctx.fillStyle = clr;
+  ctx.textBaseline = 'top';
+  const labY = barY + barH + lw + 1;
+  for (let i = 0; i <= nSegs; i++) {
+    const sx = barX + i * segPx;
+    const val = i * segM;
+    const lbl = (val >= 1 ? String(val) : val.toFixed(1)) + (i === nSegs ? 'm' : '');
+    ctx.textAlign = i === 0 ? 'left' : (i === nSegs ? 'right' : 'center');
+    ctx.fillText(lbl, sx, labY);
+  }
+
+  ctx.restore();
 }
 
 function setRefpointStyle(style) {
