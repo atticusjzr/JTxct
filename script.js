@@ -5153,15 +5153,41 @@ function cmdSnapToAxis() {
     return { x: Math.round(len * Math.cos(snapped) * 1e6) / 1e6,
              y: Math.round(len * Math.sin(snapped) * 1e6) / 1e6 };
   };
+  const carHasPositionalLock = (car) => objects.some(o =>
+    (o.type === 'position-mark' || o.type === 'pos-seg-mark')
+    && o.carId === car.id && o.constraintLocked);
+
+  // Pre-pass: for any selected refline, capture tied cars (so we group-rotate them
+  // and skip per-car alignment to avoid double-rotation).
+  const reflineTied = new Map();   // reflineIdx → { tied, pivot }
+  const tiedCarIdxs = new Set();
+  selectedObjs.forEach(i => {
+    const obj = objects[i];
+    if (obj?.type !== 'refline') return;
+    const tied = _captureTiedCars(obj);
+    if (!tied.length) return;
+    const rp = objects.find(o => o.type === 'refpoint' && o.id === obj.refpointId);
+    if (!rp) return;
+    reflineTied.set(i, { tied, pivot: { x: rp.x + rp.w/2, y: rp.y + rp.h/2 } });
+    tied.forEach(t => tiedCarIdxs.add(t.idx));
+  });
+
+  let blocked = 0;
   selectedObjs.forEach(i => {
     const obj = objects[i];
     if (!obj) return;
     if (obj.type === 'refline') {
       const dx = obj.x2 - obj.x1, dy = obj.y2 - obj.y1;
       const len = Math.sqrt(dx*dx + dy*dy);
-      const snapped = snapAngle(Math.atan2(dy, dx));
+      const origA = Math.atan2(dy, dx);
+      const snapped = snapAngle(origA);
+      let dA = snapped - origA;
+      while (dA >  Math.PI) dA -= 2*Math.PI;
+      while (dA < -Math.PI) dA += 2*Math.PI;
       obj.x2 = obj.x1 + len * Math.cos(snapped);
       obj.y2 = obj.y1 + len * Math.sin(snapped);
+      const info = reflineTied.get(i);
+      if (info) _applyTiedRotation(info.tied, info.pivot.x, info.pivot.y, dA);
     } else if (obj.type === 'marking-turn' || obj.type === 'marking-chanl') {
       const v1 = snapVec(obj.a1x, obj.a1y);
       const v2 = snapVec(obj.a2x, obj.a2y);
@@ -5172,9 +5198,15 @@ function cmdSnapToAxis() {
       obj.rotation = snapAngle(obj.rotation || 0);
       syncDimlineBBox(obj);
     } else if (obj.rotation !== undefined) {
+      const isVehicle = CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type);
+      if (isVehicle) {
+        if (tiedCarIdxs.has(i)) return; // already group-rotated by refline
+        if (carHasPositionalLock(obj)) { blocked++; return; } // rotation would break locks
+      }
       obj.rotation = snapAngle(obj.rotation || 0);
     }
   });
+  if (blocked > 0) showToast?.(`${blocked} 台車輛因鎖定無法校正`);
   composite(); markDirty(); saveSnap('水平垂直校正');
   updatePropsPanel();
 }
