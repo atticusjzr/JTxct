@@ -6731,7 +6731,7 @@ const MAX_HIST = 50;
 function saveSnap(label) {
   hist = hist.slice(0, histIdx + 1);
   hist.push({
-    label, time: Date.now(), activeIdx,
+    label, time: Date.now(), activeIdx, scale: _scale,
     objects: objects.map(o => ({...o})),
     selectedObjs: [...selectedObjs],
     layerData: layers.map(l => ({
@@ -6756,6 +6756,11 @@ function applySnap(snap) {
   activeIdx    = Math.min(snap.activeIdx, layers.length - 1);
   objects      = (snap.objects || []).map(o => ({...o}));
   selectedObjs = (snap.selectedObjs || []).filter(i => i < objects.length);
+  if (snap.scale != null) {
+    _scale = snap.scale;
+    const sd = document.getElementById('scale-display');
+    if (sd) sd.textContent = '1:' + _scale;
+  }
   syncSel();
   composite(); renderLayers(); markDirty();
 }
@@ -8067,7 +8072,7 @@ function _pxFromDisplay(v) {
   const n = Math.min(100, Math.max(0, parseFloat(v) || 0));
   return n * PX_PER_CM * 100 / _scale;
 }
-const SCALE_MIN = 20, SCALE_MAX = 2000;
+const SCALE_MIN = 50, SCALE_MAX = 1000;
 
 function _applyGlobalScale(newScale) {
   const oldScale = _scale;
