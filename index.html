@@ -1270,6 +1270,7 @@ let _scale = 100;           // display scale denominator (100 = 1:100, display i
 let _constraintMode = false;
 let _lockDragInfo = null;   // { fixedPt:{x,y}, localX, localY, origRot, startAngle }
 let _resizeCornerMode = null; // null | 'w-only' | 'h-only'
+let _dragLockSnaps = null;    // [{ snap, idx }] captured at drag start, verified at drag end
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -4131,7 +4132,19 @@ function propSetOpacity(v) {
 }
 function propSetRotation(v) {
   const o = _propObj(); if (!o) return;
-  o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
+  if (CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type)) {
+    const snap = _snapshotHardLocks(o);
+    const prev = o.rotation;
+    o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
+    if (!_hardLocksOK(o, snap)) {
+      o.rotation = prev;
+      showToast?.('鎖定的線段會被破壞，旋轉已還原');
+      composite(); updatePropsPanel?.();
+      return;
+    }
+  } else {
+    o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
+  }
   composite(); markDirty(); saveSnap('旋轉角度');
 }
 function propSetRotationLive(v) {
@@ -5186,6 +5199,12 @@ function onDown(e) {
       }
       if (selectedObjs.length === 1) {
         const orig = selectObjOrig[0];
+        // Capture lock snapshots for any vehicles in selection so onUp can verify+rollback
+        _dragLockSnaps = selectedObjs.map((i, si) => {
+          const o = objects[i];
+          if (!o || (!CAR_TYPES.has(o.type) && !MOTO_TYPES.has(o.type))) return null;
+          return { idx: i, snap: _snapshotHardLocks(o) };
+        }).filter(Boolean);
         if (hit.type === 'corner') {
           selectState = 'resize'; selectCorner = hit.idx;
           _lockDragInfo = null;
@@ -5924,12 +5943,29 @@ function onUp(e) {
     }
     const wasRotating = selectState === 'rotate';
     if (drawing && selectState !== 'idle') {
-      const _changed = selectedObjs.some((i, si) => {
-        const o = selectObjOrig?.[si], c = objects[i];
-        return !o || o.x !== c.x || o.y !== c.y || o.w !== c.w || o.h !== c.h || o.rotation !== c.rotation;
-      });
-      if (_changed) { markDirty(); saveSnap('調整物件'); }
+      // If any lock was broken during drag, restore from selectObjOrig
+      let lockBroken = false;
+      if (_dragLockSnaps && _dragLockSnaps.length) {
+        for (const ds of _dragLockSnaps) {
+          const cur = objects[ds.idx];
+          if (cur && !_hardLocksOK(cur, ds.snap)) { lockBroken = true; break; }
+        }
+      }
+      if (lockBroken) {
+        selectedObjs.forEach((i, si) => {
+          const orig = selectObjOrig?.[si];
+          if (orig) Object.assign(objects[i], orig);
+        });
+        showToast?.('已鎖定的線段不可被破壞，操作已還原');
+      } else {
+        const _changed = selectedObjs.some((i, si) => {
+          const o = selectObjOrig?.[si], c = objects[i];
+          return !o || o.x !== c.x || o.y !== c.y || o.w !== c.w || o.h !== c.h || o.rotation !== c.rotation;
+        });
+        if (_changed) { markDirty(); saveSnap('調整物件'); }
+      }
     }
+    _dragLockSnaps = null;
     const _endState = selectState;
     drawing = false; selectState = 'idle';
     _lockDragInfo = null; _resizeCornerMode = null;
