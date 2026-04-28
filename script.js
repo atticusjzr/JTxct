@@ -2022,19 +2022,22 @@ function _posSegFeet(obj) {
   const rl  = objects.find(o => o.type === 'refline' && o.id === obj.reflineId);
   if (!car || !rl) return null;
   computeReflineP1(rl);
-  let anchors;
-  if (MOTO_TYPES.has(car.type)) {
-    anchors = getMotoWheelBottoms(car);
-  } else {
-    anchors = obj.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car);
-  }
+  const isMoto = MOTO_TYPES.has(car.type);
+  const anchors = isMoto ? getMotoWheelBottoms(car)
+    : (obj.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car));
+  // Only count corners that have an active PM — segments auto-merge when a PM is deleted.
+  const pms = objects.filter(o => o.type === 'position-mark' && o.carId === car.id
+    && (isMoto || o.mode === (obj.mode || 'body'))
+    && typeof o.cornerIdx === 'number');
   const rlDx = rl.x2 - rl.x1, rlDy = rl.y2 - rl.y1;
   const rlLen2 = rlDx*rlDx + rlDy*rlDy;
-  const feet = anchors.map(c => {
+  const feet = pms.map(pm => {
+    const c = anchors[pm.cornerIdx];
+    if (!c) return null;
     const f = footOnLine(c.x, c.y, rl.x1, rl.y1, rl.x2, rl.y2);
     const t = rlLen2 > 0 ? ((f.x-rl.x1)*rlDx + (f.y-rl.y1)*rlDy) / rlLen2 : 0;
     return { f, t };
-  }).sort((a, b) => a.t - b.t);
+  }).filter(Boolean).sort((a, b) => a.t - b.t);
   if (obj.segIdx === 'rp') {
     const rp = objects.find(o => o.type === 'refpoint' && o.id === rl.refpointId);
     if (!rp) return null;
@@ -5493,7 +5496,17 @@ function ctxDelete() {
   }
   // If deleting a single position-mark, remove only that one arrow
   if (selectedObjs.length === 1 && objects[selectedObjs[0]]?.type === 'position-mark') {
+    const pm = objects[selectedObjs[0]];
+    const cId = pm.carId;
     objects.splice(selectedObjs[0], 1);
+    // Drop the highest-segIdx pos-seg-mark of this car so the remaining segs auto-merge to span the gap
+    const segs = objects
+      .map((o, i) => (o.type === 'pos-seg-mark' && o.carId === cId && typeof o.segIdx === 'number') ? { o, i } : null)
+      .filter(Boolean);
+    if (segs.length > 0) {
+      const maxSeg = segs.reduce((a, b) => a.o.segIdx > b.o.segIdx ? a : b);
+      objects.splice(maxSeg.i, 1);
+    }
     selectedObjs = []; syncSel();
     hideCtxMenu();
     composite(); markDirty(); saveSnap('刪除定位線');
@@ -6556,7 +6569,6 @@ function _applyConstraint(obj, val) {
     const car = objects.find(o => o.id === obj.carId);
     const ep = _posSegFeet(obj);
     if (!car || !ep || car.constraintLocked) return;
-    if (obj.constraintLocked) { _showLockBlockedModal([obj]); return; }
     const otherLocked = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
     if (otherLocked.length > 0) {
       _showLockBlockedModal(otherLocked); return;
