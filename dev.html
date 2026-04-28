@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>多圖層繪圖</title>
+<title>交通事故圖</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <!-- ══ TOP BAR ══════════════════════════════════════════ -->
 <div id="topbar">
-  <span id="app-title">多圖層繪圖</span>
+  <span id="app-title">交通事故圖</span>
   <div class="sep"></div>
   <button class="btn primary" onclick="cmdNew()">新建專案</button>
   <button class="btn"         onclick="cmdSave()"   title="儲存到瀏覽器本機暫存&#10;⚠ 清除瀏覽器快取或換裝置會消失">儲存專案</button>
@@ -51,6 +51,7 @@
     <div class="tdiv"></div>
     <button class="tool-btn active" id="btn-brush"  onclick="setTool('brush')"  title="筆刷 (B)">✏️</button>
     <button class="tool-btn"        id="btn-eraser" onclick="setTool('eraser')" title="橡皮擦 (E)">🧹</button>
+    <button class="tool-btn"        id="btn-free-arrow" onclick="setTool('free-arrow')" title="手繪箭頭（抬筆成型）"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 15 Q4 9 9 7 Q13 5 15 3"/><polyline points="11,2 15,3 14,7" fill="currentColor" stroke="none"/></svg></button>
     <div id="car-tool-wrap">
       <button class="tool-btn" id="btn-car" onclick="setTool('car')" title="小汽車 (C)">🚗</button>
       <div id="car-picker">
@@ -95,13 +96,13 @@
         <div class="mtext-opt active" data-v="stop"     onclick="setMarkingTextVariant('stop',this)">    <span class="opt-icon">停</span><span>停</span></div>
         <div class="mtext-opt"        data-v="yield"    onclick="setMarkingTextVariant('yield',this)">   <span class="opt-icon">讓</span><span>讓</span></div>
         <div class="mtext-opt"        data-v="slow"     onclick="setMarkingTextVariant('slow',this)">    <span class="opt-icon">慢</span><span>慢</span></div>
-        <div class="mtext-opt"        data-v="no-moto"  onclick="setMarkingTextVariant('no-moto',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">禁行<br>机车</span><span>禁行机车</span></div>
+        <div class="mtext-opt"        data-v="no-moto"  onclick="setMarkingTextVariant('no-moto',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">禁行<br>機車</span><span>禁行機車</span></div>
         <div class="mtext-opt"        data-v="crosswalk" onclick="setMarkingTextVariant('crosswalk',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">人行<br>道</span><span>人行道</span></div>
-        <div class="mtext-opt"        data-v="wait-turn" onclick="setMarkingTextVariant('wait-turn',this)"><span class="opt-icon" style="font-size:9px">待转区</span><span>待转区</span></div>
-        <div class="mtext-opt"        data-v="bus-only"  onclick="setMarkingTextVariant('bus-only',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公车<br>专用</span><span>公车专用</span></div>
-        <div class="mtext-opt"        data-v="bus-stop"  onclick="setMarkingTextVariant('bus-stop',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公车<br>停靠</span><span>公车停靠区</span></div>
-        <div class="mtext-opt"        data-v="moto-only" onclick="setMarkingTextVariant('moto-only',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">机车<br>专用</span><span>机车专用</span></div>
-        <div class="mtext-opt"        data-v="moto-slow" onclick="setMarkingTextVariant('moto-slow',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">机慢<br>车专</span><span>机慢车专用</span></div>
+        <div class="mtext-opt"        data-v="wait-turn" onclick="setMarkingTextVariant('wait-turn',this)"><span class="opt-icon" style="font-size:9px">待轉區</span><span>待轉區</span></div>
+        <div class="mtext-opt"        data-v="bus-only"  onclick="setMarkingTextVariant('bus-only',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公車<br>專用</span><span>公車專用</span></div>
+        <div class="mtext-opt"        data-v="bus-stop"  onclick="setMarkingTextVariant('bus-stop',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公車<br>停靠</span><span>公車停靠區</span></div>
+        <div class="mtext-opt"        data-v="moto-only" onclick="setMarkingTextVariant('moto-only',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">機車<br>專用</span><span>機車專用</span></div>
+        <div class="mtext-opt"        data-v="moto-slow" onclick="setMarkingTextVariant('moto-slow',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">機慢<br>車專</span><span>機慢車專用</span></div>
       </div>
     </div>
     <div id="symbol-tool-wrap">
@@ -110,11 +111,27 @@
         <div class="symbol-opt active" data-t="hydrant"  onclick="setSymbolType('hydrant',this)"> <span class="opt-icon">🔴</span><span>消防栓</span></div>
         <div class="symbol-opt"        data-t="compass"  onclick="setSymbolType('compass',this)"> <span class="opt-icon">🧭</span><span>指北針</span></div>
         <div class="symbol-opt"        data-t="scalebar" onclick="setSymbolType('scalebar',this)"><span class="opt-icon">⊟</span><span>比例尺</span></div>
-        <div class="symbol-opt"        data-t="refpoint" onclick="setSymbolType('refpoint',this)"><span class="opt-icon">☯</span><span>基準點</span></div>
+        <div class="symbol-opt"        data-t="traffic-light" onclick="setSymbolType('traffic-light',this)"><span class="opt-icon">🚦</span><span>紅綠燈</span></div>
+        <div class="symbol-opt"        data-t="utility-pole"  onclick="setSymbolType('utility-pole',this)"> <span class="opt-icon">⚡</span><span>電線杆</span></div>
       </div>
     </div>
+    <button class="tool-btn" id="btn-refpoint" onclick="setTool('refpoint')" title="基準點">☯</button>
     <div class="tdiv"></div>
     <button class="tool-btn" id="btn-freetext" onclick="setTool('freetext')" title="文字 (T)"><b style="font-size:15px">T</b></button>
+    <div id="roadsign-tool-wrap">
+      <button class="tool-btn" id="btn-roadsign" title="路段方向標示"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><line x1="10" y1="14" x2="10" y2="19"/><path d="M2 6 H14 L18.5 10 L14 14 H2 Z"/></svg></button>
+      <div id="roadsign-picker">
+        <div class="roadsign-opt" onclick="addRoadsign('h')"><span class="opt-icon">⟷</span><span>橫向</span></div>
+        <div class="roadsign-opt" onclick="addRoadsign('v')"><span class="opt-icon">↕</span><span>縱向</span></div>
+      </div>
+    </div>
+    <div id="stamp-tool-wrap">
+      <button class="tool-btn" id="btn-stamp" title="文字印章">🖊</button>
+      <div id="stamp-picker">
+        <div class="stamp-opt" onclick="cmdIncidentStamp()"><span class="opt-icon">🕐</span><span>事故資訊</span></div>
+        <div class="stamp-opt" onclick="cmdPlateStamp()"><span class="opt-icon">🚘</span><span>車牌清單</span></div>
+      </div>
+    </div>
     <div class="tdiv"></div>
     <div id="dimline-tool-wrap">
       <button class="tool-btn" id="btn-dimline-h" onclick="setTool('dimline-h')" title="水平尺寸線">↔</button>
@@ -294,6 +311,7 @@
   <div class="ctx-item" id="ctx-posmark-remove" style="display:none" onclick="ctxRemovePositionMark()"><span>移除定位標記</span></div>
   <div class="ctx-sep" id="ctx-sizemark-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-sizemark-item" style="display:none" onclick="ctxMarkSizeMarks()"><span>標記車長車寬</span></div>
+  <div class="ctx-item" id="ctx-sizemark-cycle" style="display:none" onclick="ctxCycleSizeMarkPos()"><span>換車長車寬位置</span></div>
   <div class="ctx-item" id="ctx-sizemark-remove" style="display:none" onclick="ctxRemoveSizeMarks()"><span>移除車長車寬</span></div>
   <div class="ctx-sep" id="ctx-carlabel-sep" style="display:none"></div>
   <div class="ctx-item ctx-has-sub" id="ctx-carlabel-item" style="display:none">
@@ -310,11 +328,68 @@
     </div>
   </div>
   <div class="ctx-item" id="ctx-carlabel-remove" style="display:none" onclick="ctxRemoveCarlabel()"><span>移除車輛名稱</span></div>
+  <div class="ctx-sep" id="ctx-arrowlabel-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-arrowlabel-item" style="display:none">
+    <span>命名箭頭</span>
+    <div id="ctx-arrowlabel-sub">
+      <div class="ctx-item" onclick="ctxAddArrowlabel('A')"><span>A車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('B')"><span>B車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('C')"><span>C車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('D')"><span>D車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('E')"><span>E車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('F')"><span>F車自述行向</span></div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('free')"><span>自由命名…</span></div>
+    </div>
+  </div>
+  <div class="ctx-item" id="ctx-arrowlabel-remove" style="display:none" onclick="ctxRemoveArrowlabel()"><span>移除箭頭名稱</span></div>
+  <div class="ctx-sep" id="ctx-rs-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-rs-size-item" style="display:none" onclick="event.stopPropagation()">
+    <label>字體大小</label>
+    <input type="range" id="ctx-rs-size" min="10" max="120" step="2" value="40"
+      oninput="this.nextElementSibling.textContent=this.value;rsSetFontSizeLive(this.value)"
+      onchange="saveSnap('路標字體大小')" style="flex:1;min-width:80px">
+    <span id="ctx-rs-size-val" style="min-width:24px;text-align:right;font-size:11px;color:var(--dim)">40</span>
+  </div>
+  <div class="ctx-item" id="ctx-rs-color-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>顏色</label>
+    <input type="color" id="ctx-rs-color" value="#212121" oninput="rsSetColor(this.value)" onchange="saveSnap('路標顏色')">
+  </div>
+  <div class="ctx-item" id="ctx-rs-orient-item" style="display:none" onclick="rsToggleOrientation()"><span id="ctx-rs-orient-label">切換為縱向</span></div>
+  <div class="ctx-item" id="ctx-rs-edit-item" style="display:none" onclick="rsEditTexts()"><span>編輯文字</span></div>
+  <div class="ctx-sep" id="ctx-al-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-al-size-item" style="display:none" onclick="event.stopPropagation()">
+    <label>字體大小</label>
+    <input type="range" id="ctx-al-size" min="8" max="60" step="1" value="14"
+      oninput="this.nextElementSibling.textContent=this.value;alSetFontSizeLive(this.value)"
+      onchange="saveSnap('標籤字體大小')" style="flex:1;min-width:80px">
+    <span id="ctx-al-size-val" style="min-width:20px;text-align:right;font-size:11px;color:var(--dim)">14</span>
+  </div>
+  <div class="ctx-item" id="ctx-al-color-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>文字顏色</label>
+    <input type="color" id="ctx-al-color" value="#212121" oninput="alSetColor(this.value)" onchange="saveSnap('標籤文字顏色')">
+  </div>
+  <div class="ctx-item" id="ctx-al-bg-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>底色</label>
+    <input type="checkbox" id="ctx-al-nobg" onchange="alSetNoBg(this.checked)" title="無底色">
+    <span style="font-size:11px">無</span>
+    <input type="color" id="ctx-al-bg" value="#ffffff" oninput="alSetBgColor(this.value)" onchange="saveSnap('標籤底色')">
+  </div>
+  <div class="ctx-item ctx-thick-row" id="ctx-al-radius-item" style="display:none" onclick="event.stopPropagation()">
+    <label>最大半徑</label>
+    <input type="range" id="ctx-al-radius" min="30" max="600" step="5" value="300"
+      oninput="this.nextElementSibling.textContent=this.value;alSetMaxRadiusLive(this.value)"
+      onchange="saveSnap('標籤最大半徑')" style="flex:1;min-width:80px">
+    <span id="ctx-al-radius-val" style="min-width:28px;text-align:right;font-size:11px;color:var(--dim)">300</span>
+  </div>
+  <div class="ctx-item" id="ctx-al-edit-item" style="display:none" onclick="alEditTextProp()"><span>編輯文字</span></div>
   <div class="ctx-sep" id="ctx-refline-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-refline-create" style="display:none" onclick="ctxCreateRefline()"><span>建立基準線</span></div>
   <div class="ctx-item" id="ctx-refline-delete" style="display:none" onclick="ctxDeleteRefline()"><span>刪除基準線</span></div>
   <div class="ctx-sep" id="ctx-namerp-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-namerp-item" style="display:none" onclick="ctxCreateReflabel()"><span>命名基準點</span></div>
+  <div class="ctx-sep" id="ctx-namesym-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-namesym-item" style="display:none" onclick="ctxCreateSymlabel()"><span>命名號誌</span></div>
   <div class="ctx-sep" id="ctx-rpstyle-sep" style="display:none"></div>
   <div class="ctx-item ctx-has-sub" id="ctx-rpstyle-item" style="display:none">
     <span>調整樣式</span><span>▶</span>
@@ -371,7 +446,7 @@
     <select id="ctx-cl-font" onchange="clSetFont(this.value);saveSnap('標籤字體')">
       <option value="sans-serif">黑體</option>
       <option value="serif">明體</option>
-      <option value="'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif">標楷體</option>
+      <option value="'BiauKai','DFKai-SB','標楷體','KaiTi TC','KaiTi','楷体','AR PL UKai TW',serif">標楷體</option>
       <option value="monospace">等寬</option>
     </select>
   </div>

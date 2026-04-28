@@ -298,6 +298,78 @@ body {
 .symbol-opt.active { background: rgba(66,165,245,.18); }
 .symbol-opt.disabled { opacity: .35; pointer-events: none; }
 
+#roadsign-tool-wrap { position: relative; }
+#roadsign-picker {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 400;
+  box-shadow: 2px 4px 16px rgba(0,0,0,.5);
+  white-space: nowrap;
+}
+#roadsign-tool-wrap:hover #roadsign-picker { display: flex; }
+#roadsign-picker::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -10px;
+  width: 10px; height: 100%;
+}
+.roadsign-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  font-size: 12px;
+  color: var(--text);
+}
+.roadsign-opt:hover { background: var(--btn-h); }
+
+#stamp-tool-wrap { position: relative; }
+#stamp-picker {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 400;
+  box-shadow: 2px 4px 16px rgba(0,0,0,.5);
+  white-space: nowrap;
+}
+#stamp-tool-wrap:hover #stamp-picker { display: flex; }
+#stamp-picker::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -10px;
+  width: 10px; height: 100%;
+}
+.stamp-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  font-size: 12px;
+  color: var(--text);
+}
+.stamp-opt:hover { background: var(--btn-h); }
+
 /* Color picker button */
 #color-wrap {
   position: relative;
@@ -718,7 +790,8 @@ body {
 #ctx-refline-style-sub,
 #ctx-rpstyle-sub,
 #ctx-posmark-sub,
-#ctx-carlabel-sub {
+#ctx-carlabel-sub,
+#ctx-arrowlabel-sub {
   position: absolute;
   left: 100%;
   top: -4px;
@@ -742,7 +815,8 @@ body {
 .ctx-has-sub:hover #ctx-refline-style-sub,
 .ctx-has-sub:hover #ctx-rpstyle-sub,
 .ctx-has-sub:hover #ctx-posmark-sub,
-.ctx-has-sub:hover #ctx-carlabel-sub { display: block; }
+.ctx-has-sub:hover #ctx-carlabel-sub,
+.ctx-has-sub:hover #ctx-arrowlabel-sub { display: block; }
 .ctx-thick-row { gap: 8px; cursor: default; }
 .ctx-thick-row:hover { background: none; }
 #ctx-thick-slider { flex: 1; min-width: 90px; cursor: pointer; }
@@ -808,4 +882,8 @@ body {
   background:transparent; border:none;
   outline:none; color:#0000ff; text-align:center; padding:0 1px;
   font-family:'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif;
+}
+
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
 }

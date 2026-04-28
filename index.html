@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>多圖層繪圖</title>
+<title>交通事故圖</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -304,6 +304,78 @@ body {
 .symbol-opt:hover  { background: var(--btn-h); }
 .symbol-opt.active { background: rgba(66,165,245,.18); }
 .symbol-opt.disabled { opacity: .35; pointer-events: none; }
+
+#roadsign-tool-wrap { position: relative; }
+#roadsign-picker {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 400;
+  box-shadow: 2px 4px 16px rgba(0,0,0,.5);
+  white-space: nowrap;
+}
+#roadsign-tool-wrap:hover #roadsign-picker { display: flex; }
+#roadsign-picker::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -10px;
+  width: 10px; height: 100%;
+}
+.roadsign-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  font-size: 12px;
+  color: var(--text);
+}
+.roadsign-opt:hover { background: var(--btn-h); }
+
+#stamp-tool-wrap { position: relative; }
+#stamp-picker {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 400;
+  box-shadow: 2px 4px 16px rgba(0,0,0,.5);
+  white-space: nowrap;
+}
+#stamp-tool-wrap:hover #stamp-picker { display: flex; }
+#stamp-picker::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -10px;
+  width: 10px; height: 100%;
+}
+.stamp-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  font-size: 12px;
+  color: var(--text);
+}
+.stamp-opt:hover { background: var(--btn-h); }
 
 /* Color picker button */
 #color-wrap {
@@ -725,7 +797,8 @@ body {
 #ctx-refline-style-sub,
 #ctx-rpstyle-sub,
 #ctx-posmark-sub,
-#ctx-carlabel-sub {
+#ctx-carlabel-sub,
+#ctx-arrowlabel-sub {
   position: absolute;
   left: 100%;
   top: -4px;
@@ -749,7 +822,8 @@ body {
 .ctx-has-sub:hover #ctx-refline-style-sub,
 .ctx-has-sub:hover #ctx-rpstyle-sub,
 .ctx-has-sub:hover #ctx-posmark-sub,
-.ctx-has-sub:hover #ctx-carlabel-sub { display: block; }
+.ctx-has-sub:hover #ctx-carlabel-sub,
+.ctx-has-sub:hover #ctx-arrowlabel-sub { display: block; }
 .ctx-thick-row { gap: 8px; cursor: default; }
 .ctx-thick-row:hover { background: none; }
 #ctx-thick-slider { flex: 1; min-width: 90px; cursor: pointer; }
@@ -816,13 +890,17 @@ body {
   outline:none; color:#0000ff; text-align:center; padding:0 1px;
   font-family:'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif;
 }
+
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+}
 </style>
 </head>
 <body>
 
 <!-- ══ TOP BAR ══════════════════════════════════════════ -->
 <div id="topbar">
-  <span id="app-title">多圖層繪圖</span>
+  <span id="app-title">交通事故圖</span>
   <div class="sep"></div>
   <button class="btn primary" onclick="cmdNew()">新建專案</button>
   <button class="btn"         onclick="cmdSave()"   title="儲存到瀏覽器本機暫存&#10;⚠ 清除瀏覽器快取或換裝置會消失">儲存專案</button>
@@ -863,6 +941,7 @@ body {
     <div class="tdiv"></div>
     <button class="tool-btn active" id="btn-brush"  onclick="setTool('brush')"  title="筆刷 (B)">✏️</button>
     <button class="tool-btn"        id="btn-eraser" onclick="setTool('eraser')" title="橡皮擦 (E)">🧹</button>
+    <button class="tool-btn"        id="btn-free-arrow" onclick="setTool('free-arrow')" title="手繪箭頭（抬筆成型）"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 15 Q4 9 9 7 Q13 5 15 3"/><polyline points="11,2 15,3 14,7" fill="currentColor" stroke="none"/></svg></button>
     <div id="car-tool-wrap">
       <button class="tool-btn" id="btn-car" onclick="setTool('car')" title="小汽車 (C)">🚗</button>
       <div id="car-picker">
@@ -907,13 +986,13 @@ body {
         <div class="mtext-opt active" data-v="stop"     onclick="setMarkingTextVariant('stop',this)">    <span class="opt-icon">停</span><span>停</span></div>
         <div class="mtext-opt"        data-v="yield"    onclick="setMarkingTextVariant('yield',this)">   <span class="opt-icon">讓</span><span>讓</span></div>
         <div class="mtext-opt"        data-v="slow"     onclick="setMarkingTextVariant('slow',this)">    <span class="opt-icon">慢</span><span>慢</span></div>
-        <div class="mtext-opt"        data-v="no-moto"  onclick="setMarkingTextVariant('no-moto',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">禁行<br>机车</span><span>禁行机车</span></div>
+        <div class="mtext-opt"        data-v="no-moto"  onclick="setMarkingTextVariant('no-moto',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">禁行<br>機車</span><span>禁行機車</span></div>
         <div class="mtext-opt"        data-v="crosswalk" onclick="setMarkingTextVariant('crosswalk',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">人行<br>道</span><span>人行道</span></div>
-        <div class="mtext-opt"        data-v="wait-turn" onclick="setMarkingTextVariant('wait-turn',this)"><span class="opt-icon" style="font-size:9px">待转区</span><span>待转区</span></div>
-        <div class="mtext-opt"        data-v="bus-only"  onclick="setMarkingTextVariant('bus-only',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公车<br>专用</span><span>公车专用</span></div>
-        <div class="mtext-opt"        data-v="bus-stop"  onclick="setMarkingTextVariant('bus-stop',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公车<br>停靠</span><span>公车停靠区</span></div>
-        <div class="mtext-opt"        data-v="moto-only" onclick="setMarkingTextVariant('moto-only',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">机车<br>专用</span><span>机车专用</span></div>
-        <div class="mtext-opt"        data-v="moto-slow" onclick="setMarkingTextVariant('moto-slow',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">机慢<br>车专</span><span>机慢车专用</span></div>
+        <div class="mtext-opt"        data-v="wait-turn" onclick="setMarkingTextVariant('wait-turn',this)"><span class="opt-icon" style="font-size:9px">待轉區</span><span>待轉區</span></div>
+        <div class="mtext-opt"        data-v="bus-only"  onclick="setMarkingTextVariant('bus-only',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公車<br>專用</span><span>公車專用</span></div>
+        <div class="mtext-opt"        data-v="bus-stop"  onclick="setMarkingTextVariant('bus-stop',this)"> <span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">公車<br>停靠</span><span>公車停靠區</span></div>
+        <div class="mtext-opt"        data-v="moto-only" onclick="setMarkingTextVariant('moto-only',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">機車<br>專用</span><span>機車專用</span></div>
+        <div class="mtext-opt"        data-v="moto-slow" onclick="setMarkingTextVariant('moto-slow',this)"><span class="opt-icon" style="font-size:9px;line-height:1.1;white-space:nowrap">機慢<br>車專</span><span>機慢車專用</span></div>
       </div>
     </div>
     <div id="symbol-tool-wrap">
@@ -922,11 +1001,27 @@ body {
         <div class="symbol-opt active" data-t="hydrant"  onclick="setSymbolType('hydrant',this)"> <span class="opt-icon">🔴</span><span>消防栓</span></div>
         <div class="symbol-opt"        data-t="compass"  onclick="setSymbolType('compass',this)"> <span class="opt-icon">🧭</span><span>指北針</span></div>
         <div class="symbol-opt"        data-t="scalebar" onclick="setSymbolType('scalebar',this)"><span class="opt-icon">⊟</span><span>比例尺</span></div>
-        <div class="symbol-opt"        data-t="refpoint" onclick="setSymbolType('refpoint',this)"><span class="opt-icon">☯</span><span>基準點</span></div>
+        <div class="symbol-opt"        data-t="traffic-light" onclick="setSymbolType('traffic-light',this)"><span class="opt-icon">🚦</span><span>紅綠燈</span></div>
+        <div class="symbol-opt"        data-t="utility-pole"  onclick="setSymbolType('utility-pole',this)"> <span class="opt-icon">⚡</span><span>電線杆</span></div>
       </div>
     </div>
+    <button class="tool-btn" id="btn-refpoint" onclick="setTool('refpoint')" title="基準點">☯</button>
     <div class="tdiv"></div>
     <button class="tool-btn" id="btn-freetext" onclick="setTool('freetext')" title="文字 (T)"><b style="font-size:15px">T</b></button>
+    <div id="roadsign-tool-wrap">
+      <button class="tool-btn" id="btn-roadsign" title="路段方向標示"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><line x1="10" y1="14" x2="10" y2="19"/><path d="M2 6 H14 L18.5 10 L14 14 H2 Z"/></svg></button>
+      <div id="roadsign-picker">
+        <div class="roadsign-opt" onclick="addRoadsign('h')"><span class="opt-icon">⟷</span><span>橫向</span></div>
+        <div class="roadsign-opt" onclick="addRoadsign('v')"><span class="opt-icon">↕</span><span>縱向</span></div>
+      </div>
+    </div>
+    <div id="stamp-tool-wrap">
+      <button class="tool-btn" id="btn-stamp" title="文字印章">🖊</button>
+      <div id="stamp-picker">
+        <div class="stamp-opt" onclick="cmdIncidentStamp()"><span class="opt-icon">🕐</span><span>事故資訊</span></div>
+        <div class="stamp-opt" onclick="cmdPlateStamp()"><span class="opt-icon">🚘</span><span>車牌清單</span></div>
+      </div>
+    </div>
     <div class="tdiv"></div>
     <div id="dimline-tool-wrap">
       <button class="tool-btn" id="btn-dimline-h" onclick="setTool('dimline-h')" title="水平尺寸線">↔</button>
@@ -1106,6 +1201,7 @@ body {
   <div class="ctx-item" id="ctx-posmark-remove" style="display:none" onclick="ctxRemovePositionMark()"><span>移除定位標記</span></div>
   <div class="ctx-sep" id="ctx-sizemark-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-sizemark-item" style="display:none" onclick="ctxMarkSizeMarks()"><span>標記車長車寬</span></div>
+  <div class="ctx-item" id="ctx-sizemark-cycle" style="display:none" onclick="ctxCycleSizeMarkPos()"><span>換車長車寬位置</span></div>
   <div class="ctx-item" id="ctx-sizemark-remove" style="display:none" onclick="ctxRemoveSizeMarks()"><span>移除車長車寬</span></div>
   <div class="ctx-sep" id="ctx-carlabel-sep" style="display:none"></div>
   <div class="ctx-item ctx-has-sub" id="ctx-carlabel-item" style="display:none">
@@ -1122,11 +1218,68 @@ body {
     </div>
   </div>
   <div class="ctx-item" id="ctx-carlabel-remove" style="display:none" onclick="ctxRemoveCarlabel()"><span>移除車輛名稱</span></div>
+  <div class="ctx-sep" id="ctx-arrowlabel-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-arrowlabel-item" style="display:none">
+    <span>命名箭頭</span>
+    <div id="ctx-arrowlabel-sub">
+      <div class="ctx-item" onclick="ctxAddArrowlabel('A')"><span>A車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('B')"><span>B車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('C')"><span>C車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('D')"><span>D車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('E')"><span>E車自述行向</span></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('F')"><span>F車自述行向</span></div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item" onclick="ctxAddArrowlabel('free')"><span>自由命名…</span></div>
+    </div>
+  </div>
+  <div class="ctx-item" id="ctx-arrowlabel-remove" style="display:none" onclick="ctxRemoveArrowlabel()"><span>移除箭頭名稱</span></div>
+  <div class="ctx-sep" id="ctx-rs-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-rs-size-item" style="display:none" onclick="event.stopPropagation()">
+    <label>字體大小</label>
+    <input type="range" id="ctx-rs-size" min="10" max="120" step="2" value="40"
+      oninput="this.nextElementSibling.textContent=this.value;rsSetFontSizeLive(this.value)"
+      onchange="saveSnap('路標字體大小')" style="flex:1;min-width:80px">
+    <span id="ctx-rs-size-val" style="min-width:24px;text-align:right;font-size:11px;color:var(--dim)">40</span>
+  </div>
+  <div class="ctx-item" id="ctx-rs-color-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>顏色</label>
+    <input type="color" id="ctx-rs-color" value="#212121" oninput="rsSetColor(this.value)" onchange="saveSnap('路標顏色')">
+  </div>
+  <div class="ctx-item" id="ctx-rs-orient-item" style="display:none" onclick="rsToggleOrientation()"><span id="ctx-rs-orient-label">切換為縱向</span></div>
+  <div class="ctx-item" id="ctx-rs-edit-item" style="display:none" onclick="rsEditTexts()"><span>編輯文字</span></div>
+  <div class="ctx-sep" id="ctx-al-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-al-size-item" style="display:none" onclick="event.stopPropagation()">
+    <label>字體大小</label>
+    <input type="range" id="ctx-al-size" min="8" max="60" step="1" value="14"
+      oninput="this.nextElementSibling.textContent=this.value;alSetFontSizeLive(this.value)"
+      onchange="saveSnap('標籤字體大小')" style="flex:1;min-width:80px">
+    <span id="ctx-al-size-val" style="min-width:20px;text-align:right;font-size:11px;color:var(--dim)">14</span>
+  </div>
+  <div class="ctx-item" id="ctx-al-color-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>文字顏色</label>
+    <input type="color" id="ctx-al-color" value="#212121" oninput="alSetColor(this.value)" onchange="saveSnap('標籤文字顏色')">
+  </div>
+  <div class="ctx-item" id="ctx-al-bg-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>底色</label>
+    <input type="checkbox" id="ctx-al-nobg" onchange="alSetNoBg(this.checked)" title="無底色">
+    <span style="font-size:11px">無</span>
+    <input type="color" id="ctx-al-bg" value="#ffffff" oninput="alSetBgColor(this.value)" onchange="saveSnap('標籤底色')">
+  </div>
+  <div class="ctx-item ctx-thick-row" id="ctx-al-radius-item" style="display:none" onclick="event.stopPropagation()">
+    <label>最大半徑</label>
+    <input type="range" id="ctx-al-radius" min="30" max="600" step="5" value="300"
+      oninput="this.nextElementSibling.textContent=this.value;alSetMaxRadiusLive(this.value)"
+      onchange="saveSnap('標籤最大半徑')" style="flex:1;min-width:80px">
+    <span id="ctx-al-radius-val" style="min-width:28px;text-align:right;font-size:11px;color:var(--dim)">300</span>
+  </div>
+  <div class="ctx-item" id="ctx-al-edit-item" style="display:none" onclick="alEditTextProp()"><span>編輯文字</span></div>
   <div class="ctx-sep" id="ctx-refline-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-refline-create" style="display:none" onclick="ctxCreateRefline()"><span>建立基準線</span></div>
   <div class="ctx-item" id="ctx-refline-delete" style="display:none" onclick="ctxDeleteRefline()"><span>刪除基準線</span></div>
   <div class="ctx-sep" id="ctx-namerp-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-namerp-item" style="display:none" onclick="ctxCreateReflabel()"><span>命名基準點</span></div>
+  <div class="ctx-sep" id="ctx-namesym-sep" style="display:none"></div>
+  <div class="ctx-item" id="ctx-namesym-item" style="display:none" onclick="ctxCreateSymlabel()"><span>命名號誌</span></div>
   <div class="ctx-sep" id="ctx-rpstyle-sep" style="display:none"></div>
   <div class="ctx-item ctx-has-sub" id="ctx-rpstyle-item" style="display:none">
     <span>調整樣式</span><span>▶</span>
@@ -1183,7 +1336,7 @@ body {
     <select id="ctx-cl-font" onchange="clSetFont(this.value);saveSnap('標籤字體')">
       <option value="sans-serif">黑體</option>
       <option value="serif">明體</option>
-      <option value="'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif">標楷體</option>
+      <option value="'BiauKai','DFKai-SB','標楷體','KaiTi TC','KaiTi','楷体','AR PL UKai TW',serif">標楷體</option>
       <option value="monospace">等寬</option>
     </select>
   </div>
@@ -1291,6 +1444,7 @@ let objects        = [];
 let selectedObj    = -1;        // 單選（向後相容，與 selectedObjs 同步）
 let selectedObjs   = [];        // 多選陣列
 let rubberBand     = null;      // 框選拖曳 {x1,y1,x2,y2}
+let _freeArrowRaw  = [];        // 手繪箭頭：原始點陣列（松開後平滑化成型）
 let selectState    = 'idle';    // idle | move | resize | edge | rotate | refline-p1 | refline-p2
 let selectCorner   = -1;
 let selectDragStart = null;
@@ -1303,6 +1457,10 @@ let rotPrevAngle   = 0;    // for incremental rotation (avoids ±180° wrap jump
 let turnRotCenter  = null; // a2Mid position fixed at turn-rot drag start
 let turnEditMode   = null; // 'turn-rot' | 'turn-a1m' | 'turn-cor' | null
 let rotLabelObjIdx = -1;   // which object's label is currently shown (-1 = none)
+let _pendingStamp = null;     // { text, fontSize, w, h } – stamp click-to-place mode
+let _formatPainter = null;    // { fontSize, fontFamily, bold, italic, underline, color, showBorder } – format painter mode
+let _stampPt      = null;     // current cursor position for stamp ghost
+let _plateCount   = 2;        // current number of plate input rows
 let pendingRefline    = null; // { x1,y1,color,thickness,layerId,refpointId } – click-to-place mode
 let linkedReflineOrig = null; // { idx,x1,y1,x2,y2 } – captured when dragging a refpoint
 let pendingDimline    = null; // { rotation } – dimline placement mode
@@ -1372,7 +1530,7 @@ class Layer {
 }
 
 // Types that don't count as dimline obstacles
-const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline','position-mark','size-mark','pos-seg-mark','scalebar','carlabel']);
+const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline','position-mark','size-mark','pos-seg-mark','scalebar','carlabel','arrowlabel','free-arrow','roadsign']);
 function _isObstacle(obj) { return !_NON_OBSTACLE.has(obj.type) && !obj.specialRole; }
 
 // ── Composite ────────────────────────────────────────────
@@ -1477,6 +1635,21 @@ function composite() {
     _posReflineLabel(objects[selectedObjs[0]]);
   }
   updateRefpointBtn();
+  // Live free-arrow preview (raw dashed stroke while drawing)
+  if (tool === 'free-arrow' && drawing && _freeArrowRaw.length >= 2) {
+    dCtx.save();
+    dCtx.strokeStyle = color;
+    dCtx.lineWidth = 2 / zoom;
+    dCtx.lineCap = 'round';
+    dCtx.lineJoin = 'round';
+    dCtx.setLineDash([5/zoom, 3/zoom]);
+    dCtx.globalAlpha = 0.55;
+    dCtx.beginPath();
+    dCtx.moveTo(_freeArrowRaw[0].x, _freeArrowRaw[0].y);
+    for (let i = 1; i < _freeArrowRaw.length; i++) dCtx.lineTo(_freeArrowRaw[i].x, _freeArrowRaw[i].y);
+    dCtx.stroke();
+    dCtx.restore();
+  }
   // Draw smart guide lines
   if (_guideLines.length) {
     dCtx.save();
@@ -1489,6 +1662,29 @@ function composite() {
       else                { dCtx.moveTo(-CANVAS_MARGIN, g.val); dCtx.lineTo(W + CANVAS_MARGIN, g.val); }
       dCtx.stroke();
     });
+    dCtx.restore();
+  }
+  // Pending stamp ghost
+  if (_pendingStamp && _stampPt) {
+    dCtx.save();
+    const fs = _pendingStamp.fontSize || 14;
+    const lines = _pendingStamp.text.split('\n');
+    const lh = fs * 1.4;
+    const px = _stampPt.x, py = _stampPt.y;
+    const sw = _pendingStamp.w, sh = _pendingStamp.h;
+    dCtx.globalAlpha = 0.72;
+    dCtx.fillStyle = '#ffffff';
+    dCtx.fillRect(px, py, sw, sh);
+    dCtx.strokeStyle = '#5c6bc0';
+    dCtx.lineWidth = 1.5 / zoom;
+    dCtx.setLineDash([4/zoom, 3/zoom]);
+    dCtx.strokeRect(px, py, sw, sh);
+    dCtx.setLineDash([]);
+    dCtx.globalAlpha = 1;
+    dCtx.fillStyle = '#212121';
+    dCtx.font = `${fs}px sans-serif`;
+    dCtx.textBaseline = 'top';
+    lines.forEach((l, i) => dCtx.fillText(l, px + 8, py + 4 + i * lh));
     dCtx.restore();
   }
   dCtx.restore();
@@ -1938,6 +2134,201 @@ function drawFreeText(ctx, obj) {
   ctx.restore();
 }
 
+// ── Road Sign (路段方向標示) ──────────────────────────────
+const _rsMeasureCtx = document.createElement('canvas').getContext('2d');
+function _rsMeasureText(text, fontSize, fontFamily) {
+  _rsMeasureCtx.font = `bold ${fontSize}px ${fontFamily || 'sans-serif'}`;
+  return _rsMeasureCtx.measureText(text || '').width;
+}
+
+function _syncRoadsignBBox(obj) {
+  const fs = obj.fontSize || 40;
+  const ff = obj.fontFamily || 'sans-serif';
+  const pad = Math.round(fs * 0.5);
+  if (obj.orientation === 'v') {
+    const charH = Math.ceil(fs * 1.15);
+    const leftH  = (obj.leftText   || '往那裡').length * charH;
+    const centerH= (obj.centerText || '某某路').length * charH;
+    const rightH = (obj.rightText  || '往這裡').length * charH;
+    const arrowH = Math.round(fs * 2.8);
+    obj.w = Math.round(fs + pad * 2);
+    obj.h = pad + leftH + pad + arrowH + pad + centerH + pad + arrowH + pad + rightH + pad;
+  } else {
+    const leftW   = _rsMeasureText(obj.leftText   || '往那裡', fs, ff);
+    const centerW = _rsMeasureText(obj.centerText || '某某路', fs, ff);
+    const rightW  = _rsMeasureText(obj.rightText  || '往這裡', fs, ff);
+    const arrowW  = Math.round(fs * 3.2);
+    const gap     = Math.round(fs * 0.45);
+    obj.w = Math.round(pad + leftW + gap + arrowW + gap + centerW + gap + arrowW + gap + rightW + pad);
+    obj.h = Math.round(fs * 2);
+  }
+}
+
+function drawRoadsign(ctx, obj) {
+  const fs  = obj.fontSize  || 40;
+  const ff  = obj.fontFamily || 'sans-serif';
+  const col = obj.color     || '#212121';
+  const leftTxt   = obj.leftText   || '往那裡';
+  const centerTxt = obj.centerText || '某某路';
+  const rightTxt  = obj.rightText  || '往這裡';
+  const pad  = fs * 0.5;
+  const lw   = Math.max(2, Math.round(fs * 0.07));
+  const headLen  = fs * 0.9;
+  const halfBase = fs * 0.36;
+
+  ctx.save();
+  const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
+  ctx.translate(cx, cy);
+  if (obj.rotation) ctx.rotate(obj.rotation);
+  ctx.translate(-obj.w / 2, -obj.h / 2);
+
+  ctx.fillStyle   = col;
+  ctx.strokeStyle = col;
+  ctx.lineWidth   = lw;
+  ctx.lineCap     = 'round';
+
+  if (obj.orientation === 'v') {
+    const charH = fs * 1.15;
+    const arrowH = fs * 2.8;
+    const midX = obj.w / 2;
+    let y = pad;
+
+    ctx.font = `bold ${fs}px ${ff}`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+
+    // leftText (top) — stacked chars
+    for (let i = 0; i < leftTxt.length; i++) {
+      ctx.fillText(leftTxt[i], midX, y + i * charH);
+    }
+    y += leftTxt.length * charH + pad;
+
+    // Arrow ↑ (pointing upward, toward leftText)
+    const tipY1 = y, lineStart1 = y + headLen, lineEnd1 = y + arrowH;
+    ctx.beginPath(); ctx.moveTo(midX, lineStart1); ctx.lineTo(midX, lineEnd1); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(midX, tipY1);
+    ctx.lineTo(midX - halfBase, tipY1 + headLen);
+    ctx.lineTo(midX + halfBase, tipY1 + headLen);
+    ctx.closePath(); ctx.fill();
+    y += arrowH + pad;
+
+    // centerText — stacked chars
+    for (let i = 0; i < centerTxt.length; i++) {
+      ctx.fillText(centerTxt[i], midX, y + i * charH);
+    }
+    y += centerTxt.length * charH + pad;
+
+    // Arrow ↓ (pointing downward, toward rightText)
+    const lineStart2 = y, lineEnd2 = y + arrowH - headLen, tipY2 = y + arrowH;
+    ctx.beginPath(); ctx.moveTo(midX, lineStart2); ctx.lineTo(midX, lineEnd2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(midX, tipY2);
+    ctx.lineTo(midX - halfBase, tipY2 - headLen);
+    ctx.lineTo(midX + halfBase, tipY2 - headLen);
+    ctx.closePath(); ctx.fill();
+    y += arrowH + pad;
+
+    // rightText (bottom) — stacked chars
+    for (let i = 0; i < rightTxt.length; i++) {
+      ctx.fillText(rightTxt[i], midX, y + i * charH);
+    }
+
+  } else {
+    // Horizontal
+    ctx.font = `bold ${fs}px ${ff}`;
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    const midY = obj.h / 2;
+    const leftW   = ctx.measureText(leftTxt).width;
+    const centerW = ctx.measureText(centerTxt).width;
+    const arrowW  = fs * 3.2;
+    const gap     = fs * 0.45;
+    let x = pad;
+
+    // Left text
+    ctx.fillText(leftTxt, x, midY);
+    x += leftW + gap;
+
+    // Arrow ← (head points LEFT)
+    const tipX1 = x, lineS1 = x + headLen, lineE1 = x + arrowW;
+    ctx.beginPath(); ctx.moveTo(lineS1, midY); ctx.lineTo(lineE1, midY); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tipX1, midY);
+    ctx.lineTo(tipX1 + headLen, midY - halfBase);
+    ctx.lineTo(tipX1 + headLen, midY + halfBase);
+    ctx.closePath(); ctx.fill();
+    x += arrowW + gap;
+
+    // Center text
+    ctx.fillText(centerTxt, x, midY);
+    x += centerW + gap;
+
+    // Arrow → (head points RIGHT)
+    const lineS2 = x, lineE2 = x + arrowW - headLen, tipX2 = x + arrowW;
+    ctx.beginPath(); ctx.moveTo(lineS2, midY); ctx.lineTo(lineE2, midY); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tipX2, midY);
+    ctx.lineTo(tipX2 - headLen, midY - halfBase);
+    ctx.lineTo(tipX2 - headLen, midY + halfBase);
+    ctx.closePath(); ctx.fill();
+    x += arrowW + gap;
+
+    // Right text
+    ctx.fillText(rightTxt, x, midY);
+  }
+
+  ctx.restore();
+}
+
+function addRoadsign(orientation) {
+  const fs = 40;
+  const obj = {
+    type: 'roadsign', orientation: orientation || 'h',
+    leftText: '往那裡', centerText: '某某路', rightText: '往這裡',
+    fontSize: fs, fontFamily: 'sans-serif', color: '#212121',
+    rotation: 0, x: 0, y: 0, w: 0, h: 0,
+    layerId: layers[activeIdx]?.id
+  };
+  _syncRoadsignBBox(obj);
+  const vcx = (canvasArea.scrollLeft + canvasArea.clientWidth  / 2) / zoom - CANVAS_MARGIN;
+  const vcy = (canvasArea.scrollTop  + canvasArea.clientHeight / 2) / zoom - CANVAS_MARGIN;
+  obj.x = Math.round(vcx - obj.w / 2);
+  obj.y = Math.round(vcy - obj.h / 2);
+  objects.push(obj);
+  selectedObjs = [objects.length - 1]; syncSel();
+  composite(); markDirty(); saveSnap('新增路段標示');
+  updatePropsPanel();
+}
+
+function _rsObj() { return selectedObjs.length===1 && objects[selectedObjs[0]]?.type==='roadsign' ? objects[selectedObjs[0]] : null; }
+function rsSetFontSizeLive(v) { const o=_rsObj(); if(!o) return; o.fontSize=Math.max(10,Math.min(120,+v)); _syncRoadsignBBox(o); composite(); markDirty(); }
+function rsSetColor(v) { const o=_rsObj(); if(!o) return; o.color=v; composite(); markDirty(); }
+function rsSetFont(v)  { const o=_rsObj(); if(!o) return; o.fontFamily=v; _syncRoadsignBBox(o); composite(); markDirty(); saveSnap('路標字體'); }
+function rsToggleOrientation() {
+  const o=_rsObj(); if(!o) return;
+  o.orientation = o.orientation==='v' ? 'h' : 'v';
+  _syncRoadsignBBox(o);
+  composite(); markDirty(); saveSnap('路標方向'); hideCtxMenu(); updatePropsPanel();
+}
+function rsEditTexts() {
+  const o=_rsObj(); if(!o) return;
+  hideCtxMenu();
+  const ff = o.fontFamily || 'sans-serif';
+  const fs = o.fontSize || 40;
+  openModal('編輯路段標示文字',
+    `<div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px"><label style="min-width:60px;font-size:12px">左側文字</label><input id="rs-left"   value="${(o.leftText||'').replace(/"/g,'&quot;')}"   style="flex:1;font:bold ${Math.min(fs,20)}px ${ff};padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)"></div>
+      <div style="display:flex;align-items:center;gap:8px"><label style="min-width:60px;font-size:12px">中間路名</label><input id="rs-center" value="${(o.centerText||'').replace(/"/g,'&quot;')}" style="flex:1;font:bold ${Math.min(fs,20)}px ${ff};padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)"></div>
+      <div style="display:flex;align-items:center;gap:8px"><label style="min-width:60px;font-size:12px">右側文字</label><input id="rs-right"  value="${(o.rightText||'').replace(/"/g,'&quot;')}"  style="flex:1;font:bold ${Math.min(fs,20)}px ${ff};padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)"></div>
+    </div>`,
+    [
+      {text:'確定', cls:'btn primary', fn:()=>{ const l=document.getElementById('rs-left'),c=document.getElementById('rs-center'),r=document.getElementById('rs-right'); if(!l||!c||!r) return; o.leftText=l.value; o.centerText=c.value; o.rightText=r.value; _syncRoadsignBBox(o); composite(); markDirty(); saveSnap('編輯路標文字'); closeModal(); updatePropsPanel(); }},
+      {text:'取消', cls:'btn', fn:closeModal}
+    ]
+  );
+}
+
 function drawVehicle(ctx, x, y, w, h, clr, type) {
   if (type === 'truck') drawTruck(ctx, x, y, w, h, clr);
   else if (type === 'bus') drawBus(ctx, x, y, w, h, clr);
@@ -1948,7 +2339,7 @@ function drawVehicle(ctx, x, y, w, h, clr, type) {
 function drawObjOnCtx(ctx, obj) {
   ctx.save();
   if (obj.opacity !== undefined && obj.opacity < 1) ctx.globalAlpha *= obj.opacity;
-  const _noObjTx = obj.type === 'marking-turn' || obj.type === 'marking-chanl' || obj.type === 'refline' || obj.type === 'reflabel' || obj.type === 'freetext' || obj.type === 'dimline';
+  const _noObjTx = obj.type === 'marking-turn' || obj.type === 'marking-chanl' || obj.type === 'refline' || obj.type === 'reflabel' || obj.type === 'freetext' || obj.type === 'dimline' || obj.type === 'free-arrow';
   if (!_noObjTx && (obj.rotation || obj.flipH || obj.flipV)) {
     const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
     ctx.translate(cx, cy);
@@ -1990,6 +2381,10 @@ function drawObjOnCtx(ctx, obj) {
     drawMarkingText(ctx, obj);
   } else if (obj.type === 'hydrant') {
     drawHydrant(ctx, obj.x, obj.y, obj.w, obj.h, obj.color);
+  } else if (obj.type === 'traffic-light') {
+    drawTrafficLight(ctx, obj.x, obj.y, obj.w, obj.h, obj.color);
+  } else if (obj.type === 'utility-pole') {
+    drawUtilityPole(ctx, obj.x, obj.y, obj.w, obj.h, obj.color);
   } else if (obj.type === 'compass') {
     drawCompass(ctx, obj.x, obj.y, obj.w, obj.h, obj.color);
   } else if (obj.type === 'scalebar') {
@@ -2008,12 +2403,18 @@ function drawObjOnCtx(ctx, obj) {
     drawSizeMark(ctx, obj);
   } else if (obj.type === 'freetext') {
     drawFreeText(ctx, obj);
+  } else if (obj.type === 'roadsign') {
+    drawRoadsign(ctx, obj);
   } else if (obj.type === 'image') {
     drawImageObj(ctx, obj);
   } else if (obj.type === 'dimline') {
     drawDimline(ctx, obj);
   } else if (obj.type === 'carlabel') {
     drawCarlabel(ctx, obj);
+  } else if (obj.type === 'arrowlabel') {
+    drawArrowlabel(ctx, obj);
+  } else if (obj.type === 'free-arrow') {
+    drawFreeArrow(ctx, obj);
   } else if (obj.type.startsWith('marking-')) {
     drawMarkingDblSolid(ctx, obj.x, obj.y, obj.w, obj.h, obj.color || '#f9c400');
   } else {
@@ -2064,6 +2465,8 @@ function ptInObj(pt, obj) {
   if (obj.type === 'refline') return ptOnRefLine(pt, obj);
   if (obj.type === 'dimline') return ptOnDimline(pt, obj);
   if (obj.type === 'pos-seg-mark') return ptOnPosSeg(pt, obj);
+  if (obj.type === 'free-arrow') return ptOnFreeArrow(pt, obj);
+  if (obj.type === 'arrowlabel') return ptOnArrowlabel(pt, obj);
   const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
   const cos = Math.cos(-obj.rotation), sin = Math.sin(-obj.rotation);
   const dx = pt.x - cx, dy = pt.y - cy;
@@ -2104,6 +2507,14 @@ function hitHandle(pt, obj) {
   }
   if (obj.type === 'carlabel') {
     if (ptOnCarlabel(pt, obj)) return { type: 'move' };
+    return null;
+  }
+  if (obj.type === 'arrowlabel') {
+    if (ptOnArrowlabel(pt, obj)) return { type: 'move' };
+    return null;
+  }
+  if (obj.type === 'free-arrow') {
+    if (ptOnFreeArrow(pt, obj)) return { type: 'move' };
     return null;
   }
   if (obj.type === 'marking-chanl') {
@@ -2181,7 +2592,23 @@ function drawSelHandles(ctx, obj) {
     ctx.setLineDash([]);
     ctx.restore(); return;
   }
+  if (obj.type === 'arrowlabel') {
+    const m = _getArrowlabelMetrics(obj);
+    if (!m) { ctx.restore(); return; }
+    const lw = 1.5/zoom;
+    ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw; ctx.setLineDash([4/zoom,3/zoom]);
+    ctx.strokeRect(m.cx-m.hw-3/zoom, m.cy-m.hh-3/zoom, (m.hw+3/zoom)*2, (m.hh+3/zoom)*2);
+    ctx.setLineDash([]);
+    ctx.restore(); return;
+  }
   if (obj.type === 'reflabel') {
+    ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = 1.5 / zoom;
+    ctx.setLineDash([4 / zoom, 3 / zoom]);
+    ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+    ctx.setLineDash([]);
+    ctx.restore(); return;
+  }
+  if (obj.type === 'free-arrow') {
     ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = 1.5 / zoom;
     ctx.setLineDash([4 / zoom, 3 / zoom]);
     ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
@@ -2407,8 +2834,11 @@ function ctxDeleteRefline() {
 }
 
 // ── Reflabel (基準點衛星標籤) helpers ────────────────────
+const _REFLABEL_ANCHOR_TYPES = new Set(['refpoint','traffic-light','utility-pole']);
 function findRefpointForLabel(obj) {
-  return obj.refpointId ? objects.find(o => o.type === 'refpoint' && o.id === obj.refpointId) : null;
+  if (!obj.refpointId) return null;
+  const found = objects.find(o => o.id === obj.refpointId);
+  return (found && _REFLABEL_ANCHOR_TYPES.has(found.type)) ? found : null;
 }
 
 function drawRefLabel(ctx, obj) {
@@ -2518,7 +2948,7 @@ function startFreetextEdit(idx) {
   inp.onblur = save;
   inp.onkeydown = e => {
     e.stopPropagation();
-    if (e.key === 'Escape') { existing.style.display = 'none'; inp.onblur = null; inp.onkeydown = null; composite(); }
+    if (e.key === 'Escape') { existing.style.display = 'none'; inp.onblur = null; inp.onkeydown = null; commitFreetextEdit(idx, objects[idx]?.text || ''); }
   };
 }
 
@@ -2552,6 +2982,25 @@ function ctxCreateReflabel() {
   objects.push(obj);
   selectedObjs = [objects.length - 1]; syncSel();
   composite(); markDirty(); saveSnap('命名基準點');
+}
+
+function ctxCreateSymlabel() {
+  hideCtxMenu();
+  if (selectedObjs.length !== 1) return;
+  const sym = objects[selectedObjs[0]];
+  if (!sym || (sym.type !== 'traffic-light' && sym.type !== 'utility-pole')) return;
+  if (isLayerLocked(sym.layerId)) { showToast('此圖層已鎖定，無法在鎖定圖層上建立物件'); return; }
+  if (!sym.id) sym.id = Math.random().toString(36).slice(2);
+  const obj = {
+    type: 'reflabel', refpointId: sym.id,
+    text: '雙擊重新命名', angle: Math.PI / 2, radius: 150,
+    fontSize: 14, color: '#212121', layerId: sym.layerId || layers[activeIdx].id,
+    rotation: 0, x: 0, y: 0, w: 60, h: 20,
+  };
+  objects.push(obj);
+  selectedObjs = [objects.length - 1]; syncSel();
+  const snapLabel = sym.type === 'utility-pole' ? '命名電線杆' : '命名紅綠燈';
+  composite(); markDirty(); saveSnap(snapLabel);
 }
 
 function setReflabelFontSizeLive(v) {
@@ -4098,6 +4547,32 @@ function ctxRemoveSizeMarks() {
   composite(); markDirty(); saveSnap('移除車長車寬');
 }
 
+function ctxCycleSizeMarkPos() {
+  hideCtxMenu();
+  let carId = null;
+  if (selectedObjs.length === 1) {
+    const o = objects[selectedObjs[0]];
+    if (o && (CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type))) carId = o.id;
+    else if (o && o.type === 'size-mark') carId = o.carId;
+  }
+  if (!carId) return;
+  const lenMark = objects.find(o => o.type === 'size-mark' && o.carId === carId && o.axis === 'length');
+  const widMark = objects.find(o => o.type === 'size-mark' && o.carId === carId && o.axis === 'width');
+  if (!lenMark) return;
+  if (widMark) {
+    // 4 combos: (lenSide, widSide) = (-1,1),(-1,-1),(1,-1),(1,1)
+    const combos = [[-1,1],[-1,-1],[1,-1],[1,1]];
+    const cur = combos.findIndex(([l,w]) => l === lenMark.side && w === widMark.side);
+    const next = combos[(cur + 1) % 4];
+    lenMark.side = next[0]; widMark.side = next[1];
+    syncSizeMarkBBox(lenMark); syncSizeMarkBBox(widMark);
+  } else {
+    lenMark.side = lenMark.side === -1 ? 1 : -1;
+    syncSizeMarkBBox(lenMark);
+  }
+  composite(); markDirty(); saveSnap('換車長車寬位置');
+}
+
 // ── carlabel context menu functions ──────────────────────
 function ctxAddCarlabel(charOrFree) {
   hideCtxMenu();
@@ -4149,6 +4624,61 @@ function ctxRemoveCarlabel() {
     if (objects[i].type==='carlabel' && objects[i].carId===carId) { objects.splice(i,1); removed=true; }
   }
   if (removed) { selectedObjs=[]; syncSel(); composite(); markDirty(); saveSnap('移除車輛名稱'); }
+}
+
+// ── arrowlabel context menu functions ────────────────────
+const _ARROW_PRESETS = ['A','B','C','D','E','F'];
+function ctxAddArrowlabel(presetOrFree) {
+  hideCtxMenu();
+  const selObj = selectedObjs.length===1 ? objects[selectedObjs[0]] : null;
+  if (!selObj || selObj.type !== 'free-arrow') return;
+  if (!selObj.id) selObj.id = Math.random().toString(36).slice(2);
+  // Remove existing arrowlabel for this arrow
+  for (let i = objects.length-1; i>=0; i--) {
+    if (objects[i].type==='arrowlabel' && objects[i].arrowId===selObj.id) objects.splice(i,1);
+  }
+  if (presetOrFree === 'free') {
+    openModal('自由命名', `<input type="text" id="al-free-inp" style="width:100%" placeholder="輸入名稱">`, [
+      { text:'取消', cls:'btn', fn: closeModal },
+      { text:'確認', cls:'btn primary', fn: () => {
+        const txt = (document.getElementById('al-free-inp')?.value || '').trim() || '?';
+        closeModal();
+        _doAddArrowlabel(selObj, 'free', txt);
+      }}
+    ]);
+    setTimeout(() => { document.getElementById('al-free-inp')?.focus(); }, 40);
+  } else {
+    _doAddArrowlabel(selObj, 'preset', presetOrFree + '車自述行向');
+  }
+}
+
+function _doAddArrowlabel(arrow, labelType, text) {
+  const al = {
+    type: 'arrowlabel', arrowId: arrow.id, labelType, text,
+    fontSize: 14, color: '#212121', bgColor: '#ffffff', noBg: false,
+    fontFamily: 'sans-serif',
+    offsetX: 0, offsetY: -28,
+    maxRadius: 300,
+    rotation: 0, x:0, y:0, w:0, h:0,
+    layerId: arrow.layerId || layers[activeIdx].id
+  };
+  _syncArrowlabelBBox(al);
+  objects.push(al);
+  selectedObjs = [objects.length-1]; syncSel();
+  composite(); markDirty(); saveSnap('命名箭頭');
+}
+
+function ctxRemoveArrowlabel() {
+  hideCtxMenu();
+  const selObj = selectedObjs.length===1 ? objects[selectedObjs[0]] : null;
+  if (!selObj) return;
+  const arrowId = selObj.type==='arrowlabel' ? selObj.arrowId : selObj.id;
+  if (!arrowId) return;
+  let removed = false;
+  for (let i = objects.length-1; i>=0; i--) {
+    if (objects[i].type==='arrowlabel' && objects[i].arrowId===arrowId) { objects.splice(i,1); removed=true; }
+  }
+  if (removed) { selectedObjs=[]; syncSel(); composite(); markDirty(); saveSnap('移除箭頭名稱'); }
 }
 
 // ── 群組工具函式 ──────────────────────────────────────────
@@ -4467,6 +4997,11 @@ const OBJ_TYPE_NAMES = {
   'dimline': '尺寸線',
   'scalebar': '圖示比例尺',
   'carlabel': '車輛名稱標籤',
+  'arrowlabel': '箭頭名稱標籤',
+  'free-arrow': '手繪箭頭',
+  'roadsign': '路段方向標示',
+  'traffic-light': '紅綠燈',
+  'utility-pole': '電線杆',
 };
 
 function updatePropsPanel() {
@@ -4508,8 +5043,9 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="range" min="0" max="359" step="1" value="${deg}" oninput="this.nextElementSibling.value=this.value;propSetRotationLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-rotation" min="0" max="359" step="1" value="${deg}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetRotationLive(this.value)" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
   }
 
-  // Flip (all types except refline/reflabel/scalebar/carlabel which have complex geometry or no meaning)
-  if (t !== 'refline' && t !== 'reflabel' && t !== 'scalebar' && t !== 'carlabel') {
+  // Flip (all types except refline/reflabel/scalebar/carlabel/lines which have complex geometry or no meaning)
+  const NO_FLIP = new Set(['refline','reflabel','scalebar','carlabel','arrowlabel','free-arrow','roadsign','position-mark','size-mark','pos-seg-mark','dimline']);
+  if (!NO_FLIP.has(t)) {
     const fh = !!obj.flipH, fv = !!obj.flipV;
     rows.push(`<div class="prop-row"><label>翻轉</label><div style="display:flex;gap:4px">
       <button class="btn sm${fh?' active':''}" onclick="propToggleFlip('flipH')" title="水平翻轉 ↔" style="font-size:15px;padding:1px 8px">↔</button>
@@ -4518,9 +5054,13 @@ function updatePropsPanel() {
   }
 
   // Color
-  const NO_COLOR = new Set(['position-mark', 'dimline', 'pos-seg-mark', 'carlabel']); // these handle color in their own section
+  const NO_COLOR = new Set(['position-mark', 'dimline', 'pos-seg-mark', 'carlabel', 'arrowlabel']); // these handle color in their own section
   if (obj.color !== undefined && !NO_COLOR.has(t)) {
     rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-color" value="${obj.color || '#000000'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
+  }
+  if (t === 'free-arrow') {
+    const lw = obj.lineWidth || 3;
+    rows.push(`<div class="prop-row"><label>線條粗細</label><input type="range" id="pr-linewidth-fa" min="1" max="60" step="0.5" value="${lw}" oninput="this.nextElementSibling.value=this.value;propSetFreeArrowWidth(this.value)" style="flex:1;min-width:0"><input type="number" min="1" max="60" step="0.5" value="${lw}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetFreeArrowWidth(this.value)" onchange="saveSnap('箭頭粗細')"><span class="prop-val">px</span></div>`);
   }
   if (t === 'size-mark') {
     rows.push(`<div class="prop-row"><label>線條顏色</label><input type="color" id="pr-color" value="${obj.color || '#212121'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
@@ -4535,7 +5075,7 @@ function updatePropsPanel() {
       rows.push(`<div class="prop-row"><label>尺標垂直距</label><input type="number" id="pr-smperp" min="-200" max="200" value="${Math.round(m.d||15)}" onchange="propSMMeasurePerp(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>尺標最大垂距</label><input type="number" id="pr-smmaxd" min="10" max="300" value="${m.maxD||40}" onchange="propSMMeasureMaxD(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>尺標顏色</label><input type="color" id="pr-smcolor" value="${m.color||'#e53935'}" oninput="propSMMeasureColor(this.value)" onchange="saveSnap('尺標顏色')"></div>`);
-      rows.push(`<div class="prop-row"><label>尺標大小</label><input type="number" id="pr-smsize" min="8" max="48" value="${m.size||11}" onchange="propSMMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
+      rows.push(`<div class="prop-row"><label>尺標大小</label><input type="range" min="8" max="48" step="1" value="${m.size||11}" oninput="this.nextElementSibling.value=this.value;propSMMeasureSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-smsize" min="8" max="48" step="1" value="${m.size||11}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSMMeasureSizeLive(this.value)" onchange="propSMMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>尺標底色</label><input type="checkbox" ${m.noBg?'checked':''} onchange="propSMMeasureNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-smbgcolor" value="${m.bgColor||'#ffffff'}" ${m.noBg?'disabled':''} oninput="propSMMeasureBgColor(this.value)" onchange="saveSnap('尺標底色')"></div>`);
     }
   }
@@ -4570,7 +5110,7 @@ function updatePropsPanel() {
       rows.push(`<div class="prop-row"><label>尺標垂直距</label><input type="number" id="pr-psmperp" min="-200" max="200" value="${Math.round(m.d||15)}" onchange="propPSMMeasurePerp(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>尺標最大垂距</label><input type="number" id="pr-psmmaxd" min="10" max="300" value="${m.maxD||40}" onchange="propPSMMeasureMaxD(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>尺標顏色</label><input type="color" id="pr-psmcolor" value="${m.color||'#e53935'}" oninput="propPSMMeasureColor(this.value)" onchange="saveSnap('尺標顏色')"></div>`);
-      rows.push(`<div class="prop-row"><label>尺標大小</label><input type="number" id="pr-psmsize" min="8" max="48" value="${m.size||11}" onchange="propPSMMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
+      rows.push(`<div class="prop-row"><label>尺標大小</label><input type="range" min="8" max="48" step="1" value="${m.size||11}" oninput="this.nextElementSibling.value=this.value;propPSMMeasureSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-psmsize" min="8" max="48" step="1" value="${m.size||11}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propPSMMeasureSizeLive(this.value)" onchange="propPSMMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>尺標底色</label><input type="checkbox" ${m.noBg?'checked':''} onchange="propPSMMeasureNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-psmbgcolor" value="${m.bgColor||'#ffffff'}" ${m.noBg?'disabled':''} oninput="propPSMMeasureBgColor(this.value)" onchange="saveSnap('尺標底色')"></div>`);
     }
   }
@@ -4584,7 +5124,7 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>尺標垂直距</label><input type="number" id="pr-pmperp" min="-200" max="200" value="${Math.round(m.d||15)}" onchange="propPMeasurePerp(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>尺標最大垂距</label><input type="number" id="pr-pmmaxd" min="10" max="300" value="${m.maxD||40}" onchange="propPMeasureMaxD(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>尺標顏色</label><input type="color" id="pr-pmcolor" value="${m.color||'#e53935'}" oninput="propPMeasureColor(this.value)" onchange="saveSnap('尺標顏色')"></div>`);
-    rows.push(`<div class="prop-row"><label>尺標大小</label><input type="number" id="pr-pmsize" min="8" max="48" value="${m.size||11}" onchange="propPMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>尺標大小</label><input type="range" min="8" max="48" step="1" value="${m.size||11}" oninput="this.nextElementSibling.value=this.value;propPMeasureSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-pmsize" min="8" max="48" step="1" value="${m.size||11}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propPMeasureSizeLive(this.value)" onchange="propPMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>尺標底色</label><input type="checkbox" ${m.noBg?'checked':''} onchange="propPMeasureNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-pmbgcolor" value="${m.bgColor||'#ffffff'}" ${m.noBg?'disabled':''} oninput="propPMeasureBgColor(this.value)" onchange="saveSnap('尺標底色')"></div>`);
   }
 
@@ -4619,7 +5159,7 @@ function updatePropsPanel() {
       rows.push(`<div class="prop-row"><label>垂直距</label><input type="number" id="pr-mperp" min="-200" max="200" value="${Math.round(m.d||20)}" onchange="propMeasurePerp(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>最大垂距</label><input type="number" id="pr-mmaxd" min="10" max="300" value="${m.maxD||60}" onchange="propMeasureMaxD(this.value)"><span class="prop-val">px</span></div>`);
       rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-mcolor" value="${m.color||'#e53935'}" oninput="propMeasureColor(this.value)" onchange="saveSnap('尺標顏色')"></div>`);
-      rows.push(`<div class="prop-row"><label>大小</label><input type="number" id="pr-msize" min="8" max="48" value="${m.size||11}" onchange="propMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
+      rows.push(`<div class="prop-row"><label>大小</label><input type="range" min="8" max="48" step="1" value="${m.size||11}" oninput="this.nextElementSibling.value=this.value;propMeasureSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-msize" min="8" max="48" step="1" value="${m.size||11}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propMeasureSizeLive(this.value)" onchange="propMeasureSize(this.value)"><span class="prop-val">px</span></div>`);
     }
   }
 
@@ -4639,7 +5179,7 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>數字垂距</label><input type="number" id="pr-dlperp" value="${ltd}" placeholder="自動" onchange="propDimlineLabelD(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>數字最大垂距</label><input type="number" id="pr-dlmaxd" min="10" max="300" value="${ltmd}" onchange="propDimlineLabelMaxD(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>數字顏色</label><input type="color" id="pr-dlcolor" value="${lc}" oninput="propDimlineLabelColor(this.value)" onchange="saveSnap('數字顏色')"></div>`);
-    rows.push(`<div class="prop-row"><label>數字大小</label><input type="number" id="pr-dlsize" min="8" max="48" value="${ls}" placeholder="自動" onchange="propDimlineLabelSize(this.value)"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>數字大小</label><input type="range" min="8" max="48" step="1" value="${ls||11}" oninput="this.nextElementSibling.value=this.value;propDimlineLabelSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-dlsize" min="8" max="48" step="1" value="${ls}" placeholder="自動" style="width:44px" oninput="this.previousElementSibling.value=this.value;propDimlineLabelSizeLive(this.value)" onchange="propDimlineLabelSize(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>數字底色</label><input type="checkbox" ${lnb?'checked':''} onchange="propDimlineLabelNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-dlbgcolor" value="${lbg}" ${lnb?'disabled':''} oninput="propDimlineLabelBgColor(this.value)" onchange="saveSnap('數字底色')"></div>`);
   }
 
@@ -4658,15 +5198,15 @@ function updatePropsPanel() {
     const fontVal = obj.fontFamily || 'sans-serif';
     const fontOpts = [
       {v:'sans-serif',l:'黑體'},{v:'serif',l:'明體'},
-      {v:"'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif",l:'標楷體'},
+      {v:"'BiauKai','DFKai-SB','標楷體','KaiTi TC','KaiTi','楷体','AR PL UKai TW',serif",l:'標楷體'},
       {v:'monospace',l:'等寬'},
     ].map(({v,l}) => `<option value="${v}"${fontVal===v?' selected':''}>${l}</option>`).join('');
     const bCls = obj.bold ? ' active' : '', iCls = obj.italic ? ' active' : '', uCls = obj.underline ? ' active' : '';
     rows.push('<div style="font-size:11px;font-weight:600;color:var(--text2,#888);padding:6px 0 2px">文字屬性</div>');
     rows.push(`<div class="prop-row"><label>字體</label><select id="tp-font" onchange="tpSetFont(this.value)">${fontOpts}</select></div>`);
-    rows.push(`<div class="prop-row"><label>大小</label><input type="number" id="tp-size" min="8" max="120" value="${obj.fontSize||14}" onchange="tpSetSize(this.value)"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>大小</label><input type="range" min="8" max="120" step="1" value="${obj.fontSize||14}" oninput="this.nextElementSibling.value=this.value;tpSetSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="tp-size" min="8" max="120" step="1" value="${obj.fontSize||14}" style="width:44px" oninput="this.previousElementSibling.value=this.value;tpSetSizeLive(this.value)" onchange="tpSetSize(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><button id="tp-bold" class="tp-btn${bCls}" onclick="tpToggle('bold')"><b>B</b></button><button id="tp-italic" class="tp-btn${iCls}" onclick="tpToggle('italic')"><i>I</i></button><button id="tp-underline" class="tp-btn${uCls}" onclick="tpToggle('underline')"><u>U</u></button></div>`);
-    rows.push(`<div class="prop-row"><label>半徑</label><input type="number" id="pr-radius" min="10" max="2000" value="${Math.round(obj.radius || 60)}" onchange="propSetLabelRadius(this.value)"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>半徑</label><input type="range" min="10" max="500" step="5" value="${Math.min(500,Math.round(obj.radius||60))}" oninput="this.nextElementSibling.value=this.value;propSetLabelRadiusLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-radius" min="10" max="500" step="5" value="${Math.min(500,Math.round(obj.radius||60))}" style="width:52px" oninput="this.previousElementSibling.value=this.value;propSetLabelRadiusLive(this.value)" onchange="propSetLabelRadius(this.value)"><span class="prop-val">px</span></div>`);
     rows.push(`<div class="prop-row"><label>文字</label><input type="text" id="pr-text" value="${obj.text || ''}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" oninput="propSetText(this.value)" onchange="saveSnap('標籤文字')"></div>`);
   }
 
@@ -4683,9 +5223,28 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>最大半徑</label><input type="range" min="30" max="500" step="5" value="${obj.maxRadius||120}" id="pr-cl-radius" oninput="this.nextElementSibling.value=this.value;clSetMaxRadiusLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-cl-radius-n" min="30" max="500" step="5" value="${obj.maxRadius||120}" style="width:44px" oninput="this.previousElementSibling.value=this.value;clSetMaxRadiusLive(this.value)" onchange="saveSnap('標籤最大半徑')"><span class="prop-val">px</span></div>`);
     if (isF) {
       const fv=obj.fontFamily||'sans-serif';
-      const fopts=[{v:'sans-serif',l:'黑體'},{v:'serif',l:'明體'},{v:"'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif",l:'標楷體'},{v:'monospace',l:'等寬'}].map(({v,l})=>`<option value="${v}"${fv===v?' selected':''}>${l}</option>`).join('');
+      const fopts=[{v:'sans-serif',l:'黑體'},{v:'serif',l:'明體'},{v:"'BiauKai','DFKai-SB','標楷體','KaiTi TC','KaiTi','楷体','AR PL UKai TW',serif",l:'標楷體'},{v:'monospace',l:'等寬'}].map(({v,l})=>`<option value="${v}"${fv===v?' selected':''}>${l}</option>`).join('');
       rows.push(`<div class="prop-row"><label>字體</label><select id="pr-cl-font" onchange="clSetFont(this.value);saveSnap('標籤字體')">${fopts}</select></div>`);
     }
+  }
+
+  // arrowlabel
+  if (t === 'arrowlabel') {
+    const arrow = objects.find(o => o.id === obj.arrowId);
+    if (arrow) rows.push(`<div class="prop-row"><label>所屬箭頭</label><span style="font-size:12px">手繪箭頭</span></div>`);
+    const isF = obj.labelType === 'free';
+    rows.push(`<div class="prop-row"><label>標籤文字</label><span style="font-size:12px;font-weight:700;padding:1px 6px;background:var(--input-bg);border-radius:3px">${obj.text||''}</span>${isF ? ' <button class="btn sm" onclick="alEditTextProp()" style="margin-left:6px;padding:1px 7px">編輯</button>' : ''}</div>`);
+    rows.push(`<div class="prop-row"><label>字體大小</label><input type="range" min="8" max="60" step="1" value="${obj.fontSize||14}" id="pr-al-size" oninput="this.nextElementSibling.value=this.value;alSetFontSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-al-size-n" min="8" max="60" step="1" value="${obj.fontSize||14}" style="width:44px" oninput="this.previousElementSibling.value=this.value;alSetFontSizeLive(this.value)" onchange="saveSnap('標籤字體大小')"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>文字顏色</label><input type="color" value="${obj.color||'#212121'}" oninput="alSetColor(this.value)" onchange="saveSnap('標籤文字顏色')"></div>`);
+    const nb2=!!obj.noBg, bg2=obj.bgColor||'#ffffff';
+    rows.push(`<div class="prop-row"><label>底色</label><input type="checkbox" id="pr-al-nobg" ${nb2?'checked':''} onchange="alSetNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-al-bg" value="${bg2}" ${nb2?'disabled':''} oninput="alSetBgColor(this.value)" onchange="saveSnap('標籤底色')"></div>`);
+    rows.push(`<div class="prop-row"><label>最大半徑</label><input type="range" min="30" max="600" step="5" value="${obj.maxRadius||300}" id="pr-al-radius" oninput="this.nextElementSibling.value=this.value;alSetMaxRadiusLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-al-radius-n" min="30" max="600" step="5" value="${obj.maxRadius||300}" style="width:44px" oninput="this.previousElementSibling.value=this.value;alSetMaxRadiusLive(this.value)" onchange="saveSnap('標籤最大半徑')"><span class="prop-val">px</span></div>`);
+    if (isF) {
+      const fv2=obj.fontFamily||'sans-serif';
+      const fopts2=[{v:'sans-serif',l:'黑體'},{v:'serif',l:'明體'},{v:"'BiauKai','DFKai-SB','標楷體','KaiTi TC','KaiTi','楷体','AR PL UKai TW',serif",l:'標楷體'},{v:'monospace',l:'等寬'}].map(({v,l})=>`<option value="${v}"${fv2===v?' selected':''}>${l}</option>`).join('');
+      rows.push(`<div class="prop-row"><label>字體</label><select id="pr-al-font" onchange="alSetFont(this.value);saveSnap('標籤字體')">${fopts2}</select></div>`);
+    }
+    rows.push(`<div class="prop-row"><button class="btn sm" onclick="ctxRemoveArrowlabel()" style="color:#e57373">移除標籤</button></div>`);
   }
 
   // Freetext
@@ -4693,15 +5252,31 @@ function updatePropsPanel() {
     const fontVal = obj.fontFamily || 'sans-serif';
     const fontOpts = [
       {v:'sans-serif',l:'黑體'},{v:'serif',l:'明體'},
-      {v:"'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif",l:'標楷體'},
+      {v:"'BiauKai','DFKai-SB','標楷體','KaiTi TC','KaiTi','楷体','AR PL UKai TW',serif",l:'標楷體'},
       {v:'monospace',l:'等寬'},
     ].map(({v,l}) => `<option value="${v}"${fontVal===v?' selected':''}>${l}</option>`).join('');
     const bCls = obj.bold ? ' active' : '', iCls = obj.italic ? ' active' : '', uCls = obj.underline ? ' active' : '';
     rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-ft-color" value="${obj.color||'#000000'}" oninput="propFtColor(this.value)" onchange="saveSnap('文字顏色')"></div>`);
     rows.push(`<div class="prop-row"><label>字體</label><select id="pr-ft-font" onchange="propFtFont(this.value)">${fontOpts}</select></div>`);
-    rows.push(`<div class="prop-row"><label>大小</label><input type="number" id="pr-ft-size" min="6" max="200" value="${obj.fontSize||14}" onchange="propFtSize(this.value)"><span class="prop-val">px</span></div>`);
-    rows.push(`<div class="prop-row"><button id="pr-ft-bold" class="tp-btn${bCls}" onclick="propFtToggle('bold')"><b>B</b></button><button id="pr-ft-italic" class="tp-btn${iCls}" onclick="propFtToggle('italic')"><i>I</i></button><button id="pr-ft-underline" class="tp-btn${uCls}" onclick="propFtToggle('underline')"><u>U</u></button></div>`);
+    rows.push(`<div class="prop-row"><label>大小</label><input type="range" min="6" max="200" step="1" value="${obj.fontSize||14}" id="pr-ft-size" oninput="this.nextElementSibling.value=this.value;propFtSize(this.value)" style="flex:1;min-width:0"><input type="number" min="6" max="200" step="1" value="${obj.fontSize||14}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propFtSize(this.value)" onchange="saveSnap('字體大小')"><span class="prop-val">px</span></div>`);
+    const paintActive = !!_formatPainter;
+    rows.push(`<div class="prop-row"><button id="pr-ft-bold" class="tp-btn${bCls}" onclick="propFtToggle('bold')"><b>B</b></button><button id="pr-ft-italic" class="tp-btn${iCls}" onclick="propFtToggle('italic')"><i>I</i></button><button id="pr-ft-underline" class="tp-btn${uCls}" onclick="propFtToggle('underline')"><u>U</u></button><button class="btn sm${paintActive?' active':''}" onclick="activateFormatPainter()" title="格式刷" style="margin-left:6px;font-size:13px">格式刷</button></div>`);
     rows.push(`<div class="prop-row"><label>文字</label><input type="text" id="pr-ft-text" value="${(obj.text||'').replace(/"/g,'&quot;')}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" oninput="propFtText(this.value)" onchange="saveSnap('文字')"></div>`);
+  }
+
+  // Roadsign
+  if (t === 'roadsign') {
+    const fv = obj.fontFamily || 'sans-serif';
+    const kaiFont = "'BiauKai','DFKai-SB','標楷體','KaiTi TC','KaiTi','楷体','AR PL UKai TW',serif";
+    const fopts = [{v:'sans-serif',l:'黑體'},{v:'serif',l:'明體'},{v:kaiFont,l:'標楷體'},{v:'monospace',l:'等寬'}].map(({v,l})=>`<option value="${v}"${fv===v?' selected':''}>${l}</option>`).join('');
+    const orient = obj.orientation === 'v' ? '縱向' : '橫向';
+    rows.push(`<div class="prop-row"><label>方向</label><span style="font-size:12px">${orient}</span><button class="btn sm" onclick="rsToggleOrientation()" style="margin-left:8px">切換</button></div>`);
+    rows.push(`<div class="prop-row"><label>字體大小</label><input type="range" min="10" max="120" step="2" value="${obj.fontSize||40}" id="pr-rs-size" oninput="this.nextElementSibling.value=this.value;rsSetFontSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" min="10" max="120" step="2" value="${obj.fontSize||40}" style="width:44px" oninput="this.previousElementSibling.value=this.value;rsSetFontSizeLive(this.value)" onchange="saveSnap('路標字體大小')"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>顏色</label><input type="color" value="${obj.color||'#212121'}" oninput="rsSetColor(this.value)" onchange="saveSnap('路標顏色')"></div>`);
+    rows.push(`<div class="prop-row"><label>字體</label><select id="pr-rs-font" onchange="rsSetFont(this.value)">${fopts}</select></div>`);
+    rows.push(`<div class="prop-row"><label>左側文字</label><input type="text" value="${(obj.leftText||'').replace(/"/g,'&quot;')}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" oninput="rsSetText('leftText',this.value)" onchange="saveSnap('路標文字')"></div>`);
+    rows.push(`<div class="prop-row"><label>中間路名</label><input type="text" value="${(obj.centerText||'').replace(/"/g,'&quot;')}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" oninput="rsSetText('centerText',this.value)" onchange="saveSnap('路標文字')"></div>`);
+    rows.push(`<div class="prop-row"><label>右側文字</label><input type="text" value="${(obj.rightText||'').replace(/"/g,'&quot;')}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" oninput="rsSetText('rightText',this.value)" onchange="saveSnap('路標文字')"></div>`);
   }
 
   // Dashed markings
@@ -4770,12 +5345,39 @@ function clEditText() {
 }
 function clEditTextProp() { clEditText(); }
 
+// ── arrowlabel property functions ─────────────────────────
+function _alObj() { return selectedObjs.length===1 && objects[selectedObjs[0]]?.type==='arrowlabel' ? objects[selectedObjs[0]] : null; }
+function alSetFontSizeLive(v) { const o=_alObj(); if(!o) return; o.fontSize=Math.max(8,Math.min(60,+v)); _syncArrowlabelBBox(o); composite(); markDirty(); }
+function alSetColor(v) { const o=_alObj(); if(!o) return; o.color=v; composite(); markDirty(); }
+function alSetBgColor(v) { const o=_alObj(); if(!o) return; o.bgColor=v; composite(); markDirty(); }
+function alSetNoBg(v) { const o=_alObj(); if(!o) return; o.noBg=!!v; const bg=document.getElementById('pr-al-bg'); if(bg) bg.disabled=v; composite(); markDirty(); saveSnap('標籤底色'); }
+function alSetMaxRadiusLive(v) { const o=_alObj(); if(!o) return; o.maxRadius=Math.max(30,Math.min(600,+v)); composite(); markDirty(); }
+function alSetFont(v) { const o=_alObj(); if(!o||o.labelType!=='free') return; o.fontFamily=v; _syncArrowlabelBBox(o); composite(); markDirty(); }
+function alEditTextProp() {
+  const o=_alObj(); if(!o||o.labelType!=='free') return;
+  openModal('編輯文字', `<input type="text" id="al-edit-inp" style="width:100%" value="${(o.text||'').replace(/"/g,'&quot;')}">`, [
+    { text:'取消', cls:'btn', fn: closeModal },
+    { text:'確認', cls:'btn primary', fn: () => {
+      const txt = (document.getElementById('al-edit-inp')?.value || '').trim() || o.text;
+      closeModal();
+      o.text = txt; _syncArrowlabelBBox(o); composite(); markDirty(); saveSnap('編輯標籤文字');
+      updatePropsPanel();
+    }}
+  ]);
+  setTimeout(() => { document.getElementById('al-edit-inp')?.focus(); }, 40);
+}
+
 function tpSetSize(val) {
   const v = Math.max(8, Math.min(120, parseFloat(val) || 14));
   selectedObjs.forEach(i => { if (objects[i]?.type === 'reflabel') objects[i].fontSize = v; });
   const sizeEl = document.getElementById('tp-size');
   if (sizeEl) sizeEl.value = v;
   composite(); markDirty(); saveSnap('設定字體大小');
+}
+function tpSetSizeLive(val) {
+  const v = Math.max(8, Math.min(120, parseFloat(val) || 14));
+  selectedObjs.forEach(i => { if (objects[i]?.type === 'reflabel') objects[i].fontSize = v; });
+  composite(); markDirty();
 }
 
 function tpToggle(prop) {
@@ -4793,7 +5395,24 @@ function _propObj() {
 }
 function propSetOpacity(v) {
   const o = _propObj(); if (!o) return;
-  o.opacity = v / 100;
+  const op = v / 100;
+  if (o.type === 'size-mark') {
+    const sync = document.getElementById('pr-sm-thsync')?.checked ?? true;
+    if (sync && o.carId) objects.filter(x => x.type === 'size-mark' && x.carId === o.carId).forEach(x => x.opacity = op);
+    else o.opacity = op;
+  } else if (o.type === 'position-mark') {
+    const sync = document.getElementById('pr-pm-thsync')?.checked ?? true;
+    if (sync && o.carId) objects.filter(x => x.type === 'position-mark' && x.carId === o.carId).forEach(x => x.opacity = op);
+    else o.opacity = op;
+  } else if (o.type === 'pos-seg-mark') {
+    const sync = document.getElementById('pr-psm-thsync')?.checked ?? true;
+    if (sync && o.carId) objects.filter(x => x.type === 'pos-seg-mark' && x.carId === o.carId).forEach(x => x.opacity = op);
+    else o.opacity = op;
+  } else if (o.type === 'dimline') {
+    _applyDimlineSync(o, d => { d.opacity = op; });
+  } else {
+    o.opacity = op;
+  }
   document.getElementById('pr-opacity-val').textContent = v + '%';
   composite(); markDirty();
 }
@@ -4854,6 +5473,18 @@ function ctxFlip(axis) {
 function propSetColor(v) {
   const o = _propObj(); if (!o) return;
   o.color = v; composite(); markDirty();
+}
+function propSetFreeArrowWidth(v) {
+  const o = _propObj(); if (!o || o.type !== 'free-arrow') return;
+  o.lineWidth = Math.max(0.5, +v);
+  syncFreeArrowBBox(o);
+  composite(); markDirty();
+  // Keep left-panel brush size in sync
+  bSize = o.lineWidth;
+  const sr = document.getElementById('size-range');
+  const sv = document.getElementById('size-val');
+  if (sr) sr.value = bSize;
+  if (sv) sv.textContent = bSize;
 }
 function propSetMarkText(v) {
   const o = _propObj(); if (!o || o.type !== 'marking-text') return;
@@ -5050,15 +5681,44 @@ function propSetLabelRadius(v) {
   o.radius = Math.max(10, parseFloat(v) || 60);
   composite(); markDirty(); saveSnap('標籤半徑');
 }
+function propSetLabelRadiusLive(v) {
+  const o = _propObj(); if (!o) return;
+  o.radius = Math.max(10, parseFloat(v) || 60);
+  composite(); markDirty();
+}
+function propMeasureSizeLive(v)    { const o=_propObj(); if(o?.type==='refline'&&o.measure){o.measure.size=Math.max(8,Math.min(48,parseFloat(v)||11));composite();markDirty();} }
+function propPMeasureSizeLive(v)   { const o=_propObj(); if(o?.type!=='position-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyMeasureSync(o,m=>{m.size=s;}); composite();markDirty(); }
+function propSMMeasureSizeLive(v)  { const o=_propObj(); if(o?.type!=='size-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyMeasureSync(o,m=>{m.size=s;}); composite();markDirty(); }
+function propPSMMeasureSizeLive(v) { const o=_propObj(); if(o?.type!=='pos-seg-mark'||!o.measure)return; const s=Math.max(8,Math.min(48,parseFloat(v)||11)); _applyPSMMeasureSync(o,m=>{m.size=s;}); composite();markDirty(); }
+function propDimlineLabelSizeLive(v){ const o=_propObj(); if(o?.type!=='dimline')return; const s=Math.max(8,Math.min(48,parseFloat(v)||0)); _applyDimlineSync(o,d=>{d.labelSize=s||null;}); composite();markDirty(); }
 function propSetText(v) {
   const o = _propObj(); if (!o) return;
   o.text = v; composite(); markDirty();
 }
 function propFtColor(v) { const o=_propObj(); if(o?.type==='freetext'){o.color=v;composite();markDirty();} }
 function propFtFont(v)  { const o=_propObj(); if(o?.type==='freetext'){o.fontFamily=v;composite();markDirty();saveSnap('字體');} }
-function propFtSize(v)  { const o=_propObj(); if(o?.type==='freetext'){o.fontSize=Math.max(6,Math.min(200,parseFloat(v)||14));composite();markDirty();saveSnap('字體大小');} }
+function propFtSize(v)  { const o=_propObj(); if(o?.type==='freetext'){o.fontSize=Math.max(6,Math.min(200,parseFloat(v)||14));composite();markDirty();} }
 function propFtToggle(p){ const o=_propObj(); if(o?.type==='freetext'){o[p]=!o[p];updatePropsPanel();composite();markDirty();saveSnap('文字樣式');} }
 function propFtText(v)  { const o=_propObj(); if(o?.type==='freetext'){o.text=v;composite();markDirty();} }
+
+function activateFormatPainter() {
+  if (selectedObjs.length !== 1) { showToast('請選取單一文字框再使用格式刷'); return; }
+  const o = objects[selectedObjs[0]];
+  if (!o || o.type !== 'freetext') return;
+  if (_formatPainter) { _formatPainter = null; dc.style.cursor = ''; updatePropsPanel(); return; }
+  _formatPainter = {
+    fontSize: o.fontSize || 14,
+    fontFamily: o.fontFamily || 'sans-serif',
+    bold: !!o.bold, italic: !!o.italic, underline: !!o.underline,
+    color: o.color || '#000000',
+    showBorder: o.showBorder !== false,
+  };
+  dc.style.cursor = 'crosshair';
+  updatePropsPanel();
+  showToast('格式刷已啟動，右鍵取消');
+}
+
+function rsSetText(field, v) { const o=_rsObj(); if(!o) return; o[field]=v; _syncRoadsignBBox(o); composite(); markDirty(); }
 function propSetDashLen(v) {
   const o = _propObj(); if (!o) return;
   o.dashLen = Math.max(4, parseFloat(v) || 30);
@@ -5705,6 +6365,44 @@ function onDown(e) {
     return;
   }
 
+  // Format painter click
+  if (_formatPainter) {
+    if (e.button !== 0) { _formatPainter = null; dc.style.cursor = ''; updatePropsPanel(); return; }
+    let found = -1;
+    for (let i = objects.length - 1; i >= 0; i--) {
+      if (isLayerLocked(objects[i].layerId)) continue;
+      if (objects[i].type === 'freetext' && ptInObj(pt, objects[i])) { found = i; break; }
+    }
+    if (found >= 0) {
+      Object.assign(objects[found], _formatPainter);
+      _formatPainter = null; dc.style.cursor = '';
+      selectedObjs = [found]; syncSel();
+      composite(); markDirty(); saveSnap('套用格式刷'); updatePropsPanel();
+    } else {
+      showToast('請點擊目標文字框');
+    }
+    return;
+  }
+
+  // Commit pending stamp on click
+  if (_pendingStamp) {
+    if (e.button === 2) { _pendingStamp = null; _stampPt = null; dc.style.cursor = ''; composite(); return; }
+    if (e.button !== 0) return;
+    const obj = {
+      type: 'freetext', text: _pendingStamp.text,
+      fontSize: _pendingStamp.fontSize || 14, fontFamily: 'sans-serif',
+      color: '#212121', bold: false, italic: false, underline: false, showBorder: false,
+      rotation: 0, x: Math.round(pt.x), y: Math.round(pt.y),
+      w: _pendingStamp.w, h: _pendingStamp.h,
+      layerId: layers[activeIdx]?.id
+    };
+    objects.push(obj);
+    selectedObjs = [objects.length - 1]; syncSel();
+    _pendingStamp = null; _stampPt = null; dc.style.cursor = '';
+    composite(); markDirty(); saveSnap('放置文字標記'); updatePropsPanel();
+    return;
+  }
+
   // A1/A2/A3 radio buttons: clickable in any tool mode
   if (e.button === 0) {
     const _activeL = layers[activeIdx];
@@ -5830,6 +6528,15 @@ function onDown(e) {
       if (found < 0) found = foundPM;
 
       if (found >= 0) {
+        // Ctrl+click：切換多選
+        if (e.ctrlKey) {
+          if (selectedObjs.includes(found)) {
+            selectedObjs = selectedObjs.filter(i => i !== found);
+          } else {
+            selectedObjs = [...selectedObjs, found];
+          }
+          syncSel(); composite(); return;
+        }
         // 點到物件：若不在目前選取裡就重新選
         if (!selectedObjs.includes(found)) {
           if (rotLabelObjIdx >= 0 && rotLabelObjIdx !== found) hideRotLabel();
@@ -6053,7 +6760,8 @@ function onDown(e) {
     return; // handled via drag in onMove/onUp
   }
 
-  if (tool === 'car' || tool === 'moto' || tool === 'marking' || tool === 'marking-text' || tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar') return;
+  if (tool === 'free-arrow') { _freeArrowRaw = [pt]; return; }
+  if (tool === 'car' || tool === 'moto' || tool === 'marking' || tool === 'marking-text' || tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar' || tool === 'traffic-light' || tool === 'utility-pole') return;
 
   const l = layers[activeIdx];
   if (!l?.visible) return;
@@ -6067,6 +6775,7 @@ function onDown(e) {
 }
 
 function onMove(e) {
+  if (_pendingStamp) { _stampPt = getPos(e); composite(); return; }
   if (_dimlineEndDrag) {
     const pt = getPos(e);
     const obj = objects[_dimlineEndDrag.objIdx];
@@ -6273,6 +6982,19 @@ function onMove(e) {
           }
           return;
         }
+        if (o.type === 'arrowlabel') {
+          const arrow = objects.find(c => c.id === o.arrowId);
+          if (arrow) {
+            let newOx = (orig.offsetX||0) + dx;
+            let newOy = (orig.offsetY||0) + dy;
+            const dist = Math.sqrt(newOx*newOx + newOy*newOy);
+            const mr = o.maxRadius || 300;
+            if (dist > mr) { const s = mr/dist; newOx *= s; newOy *= s; }
+            o.offsetX = newOx; o.offsetY = newOy;
+            _syncArrowlabelBBox(o);
+          }
+          return;
+        }
         const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
         if (isVehicle && _hasPosLock(o)) {
           // Slide along refline: project drag delta onto refline tangent. Preserves
@@ -6310,6 +7032,10 @@ function onMove(e) {
           o.cx = orig.cx + dx;
           o.cy = orig.cy + dy;
           syncDimlineBBox(o);
+        }
+        if (o.type === 'free-arrow') {
+          o.pts = orig.pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+          syncFreeArrowBBox(o);
         }
       });
       // Move linked refline together with its refpoint
@@ -6530,17 +7256,19 @@ function onMove(e) {
     return;
   }
 
-  if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar') {
+  if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar' || tool === 'traffic-light' || tool === 'utility-pole') {
     shapePt = pt;
     const rx = Math.min(lastPt.x, pt.x), ry = Math.min(lastPt.y, pt.y);
     const rw = Math.abs(pt.x - lastPt.x), rh = Math.abs(pt.y - lastPt.y);
     composite();
     if (rw > 8 && rh > 8) {
       dCtx.save(); dCtx.translate(CANVAS_MARGIN, CANVAS_MARGIN); dCtx.globalAlpha = 0.72;
-      if (tool === 'hydrant')        drawHydrant(dCtx, rx, ry, rw, rh, '#c62828');
-      else if (tool === 'compass')   drawCompass(dCtx, rx, ry, rw, rh, '#212121');
-      else if (tool === 'scalebar')  drawScalebar(dCtx, { x:rx, y:ry, w:rw, h:rh, color:'#212121' });
-      else                           drawRefPoint(dCtx, rx, ry, rw, rh, '#212121', 3);
+      if (tool === 'hydrant')           drawHydrant(dCtx, rx, ry, rw, rh, '#c62828');
+      else if (tool === 'compass')      drawCompass(dCtx, rx, ry, rw, rh, '#212121');
+      else if (tool === 'scalebar')     drawScalebar(dCtx, { x:rx, y:ry, w:rw, h:rh, color:'#212121' });
+      else if (tool === 'traffic-light') drawTrafficLight(dCtx, rx, ry, rw, rh, '#37474f');
+      else if (tool === 'utility-pole') drawUtilityPole(dCtx, rx, ry, rw, rh, '#5d4037');
+      else                              drawRefPoint(dCtx, rx, ry, rw, rh, '#212121', 3);
       dCtx.restore();
     }
     return;
@@ -6661,6 +7389,11 @@ function onMove(e) {
     return;
   }
 
+  if (tool === 'free-arrow') {
+    if (drawing && _freeArrowRaw) { _freeArrowRaw.push(pt); composite(); }
+    return;
+  }
+
   const l = layers[activeIdx];
   if (!l?.visible) return;
   const ctx = l.ctx;
@@ -6765,7 +7498,7 @@ function onUp(e) {
     }
     shapePt = null;
     composite();
-  } else if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar') {
+  } else if (tool === 'hydrant' || tool === 'compass' || tool === 'refpoint' || tool === 'scalebar' || tool === 'traffic-light' || tool === 'utility-pole') {
     if (tool === 'refpoint' && objects.some(o => o.type === 'refpoint')) {
       shapePt = null; composite();
     } else {
@@ -6774,14 +7507,14 @@ function onUp(e) {
         const rx = Math.min(lastPt.x, pt2.x), ry = Math.min(lastPt.y, pt2.y);
         const rw = Math.abs(pt2.x - lastPt.x), rh = Math.abs(pt2.y - lastPt.y);
         const sbDefW = Math.round(PX_PER_CM * 5), sbDefH = Math.round(PX_PER_CM * 0.9);
-        const dw = tool === 'hydrant' ? 50 : tool === 'scalebar' ? sbDefW : 60;
-        const dh = tool === 'hydrant' ? 80 : tool === 'scalebar' ? sbDefH : 60;
+        const dw = tool === 'hydrant' ? 50 : tool === 'scalebar' ? sbDefW : tool === 'traffic-light' ? 36 : tool === 'utility-pole' ? 30 : 60;
+        const dh = tool === 'hydrant' ? 80 : tool === 'scalebar' ? sbDefH : tool === 'traffic-light' ? 100 : tool === 'utility-pole' ? 120 : 60;
         const fw = rw > 10 ? rw : dw;
         const fh = tool === 'scalebar'
           ? (rw > 10 ? Math.round(rw * sbDefH / sbDefW) : dh)  // maintain aspect when dragged
           : (rh > 10 ? rh : dh);
         const fx = rw > 10 ? rx : lastPt.x - fw/2, fy = rh > 10 ? ry : lastPt.y - fh/2;
-        const clr = tool === 'hydrant' ? '#c62828' : '#212121';
+        const clr = tool === 'hydrant' ? '#c62828' : tool === 'traffic-light' ? '#37474f' : tool === 'utility-pole' ? '#5d4037' : '#212121';
         const thick = tool === 'refpoint' ? 3 : undefined;
         const rpId  = tool === 'refpoint' ? Math.random().toString(36).slice(2) : undefined;
         const isRp = tool === 'refpoint';
@@ -6924,6 +7657,24 @@ function onUp(e) {
       composite();
       startFreetextEdit(idx);
     }
+    shapePt = null;
+  } else if (tool === 'free-arrow') {
+    if (_freeArrowRaw.length >= 4) {
+      const simplified = _dpSimplify(_freeArrowRaw, 6);
+      if (simplified.length >= 2) {
+        const obj = {
+          type: 'free-arrow', pts: simplified,
+          color, lineWidth: bSize, rotation: 0, x: 0, y: 0, w: 0, h: 0,
+          layerId: layers[activeIdx]?.id
+        };
+        syncFreeArrowBBox(obj);
+        objects.push(obj);
+        selectedObjs = [objects.length - 1]; syncSel();
+        markDirty(); saveSnap('繪製手繪箭頭');
+      }
+    }
+    _freeArrowRaw = [];
+    composite();
     shapePt = null;
   } else {
     didDraw = true;
@@ -7102,7 +7853,7 @@ function setTool(t) {
   if (t !== 'select') { selectedObjs = []; syncSel(); }
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('btn-' + t)?.classList.add('active');
-  const cursors = { brush:'crosshair', eraser:'cell', car:'crosshair', moto:'crosshair', marking:'crosshair', 'marking-text':'crosshair', select:'default', hand:'grab', 'dimline-h':'none', 'dimline-v':'none' };
+  const cursors = { brush:'crosshair', eraser:'cell', car:'crosshair', moto:'crosshair', marking:'crosshair', 'marking-text':'crosshair', select:'default', hand:'grab', 'dimline-h':'none', 'dimline-v':'none', 'free-arrow':'crosshair' };
   dc.style.cursor = cursors[t] || 'crosshair';
   if (t !== 'dimline-h' && t !== 'dimline-v') {
     pendingDimline = null; _dimlinePt = null;
@@ -7212,6 +7963,15 @@ function setMarkingTextVariant(v, el) {
 function setBrushSize(v) {
   bSize = +v;
   document.getElementById('size-val').textContent = v;
+  // Live-update selected free-arrow thickness
+  const o = _propObj();
+  if (o && o.type === 'free-arrow') {
+    o.lineWidth = bSize;
+    syncFreeArrowBBox(o);
+    composite(); markDirty();
+    const r = document.getElementById('pr-linewidth-fa');
+    if (r) { r.value = bSize; r.nextElementSibling.value = bSize; }
+  }
 }
 
 // ── 右鍵選單 ─────────────────────────────────────────────
@@ -7345,8 +8105,10 @@ function showCtxMenu(e) {
   const hasSingleSM        = selObj?.type === 'size-mark';
   const showSMCreate = (hasSingleCar || hasSingleMoto) && !vehicleHasSizeMark;
   const showSMRemove = ((hasSingleCar || hasSingleMoto) && vehicleHasSizeMark) || hasSingleSM;
+  const showSMCycle  = showSMRemove;
   document.getElementById('ctx-sizemark-sep').style.display    = (showSMCreate || showSMRemove) ? '' : 'none';
   document.getElementById('ctx-sizemark-item').style.display   = showSMCreate ? '' : 'none';
+  document.getElementById('ctx-sizemark-cycle').style.display  = showSMCycle  ? '' : 'none';
   document.getElementById('ctx-sizemark-remove').style.display = showSMRemove ? '' : 'none';
 
   const hasSingleVehicle = selectedObjs.length===1 && selObj && (CAR_TYPES.has(selObj.type)||MOTO_TYPES.has(selObj.type));
@@ -7357,6 +8119,40 @@ function showCtxMenu(e) {
   document.getElementById('ctx-carlabel-sep').style.display = (showCarlabelCreate||showCarlabelRemove) ? '' : 'none';
   document.getElementById('ctx-carlabel-item').style.display = showCarlabelCreate ? '' : 'none';
   document.getElementById('ctx-carlabel-remove').style.display = showCarlabelRemove ? '' : 'none';
+
+  const hasSingleArrow = selectedObjs.length===1 && selObj?.type==='free-arrow';
+  const arrowHasLabel = hasSingleArrow && selObj.id && objects.some(o=>o.type==='arrowlabel'&&o.arrowId===selObj.id);
+  const hasSingleArrowlabel = selectedObjs.length===1 && selObj?.type==='arrowlabel';
+  const showAlCreate = hasSingleArrow;
+  const showAlRemove = (hasSingleArrow && arrowHasLabel) || hasSingleArrowlabel;
+  document.getElementById('ctx-arrowlabel-sep').style.display = (showAlCreate||showAlRemove) ? '' : 'none';
+  document.getElementById('ctx-arrowlabel-item').style.display = showAlCreate ? '' : 'none';
+  document.getElementById('ctx-arrowlabel-remove').style.display = showAlRemove ? '' : 'none';
+
+  // roadsign context menu items
+  const hasSingleRoadsign = selectedObjs.length===1 && selObj?.type==='roadsign';
+  const rsItems = ['ctx-rs-sep','ctx-rs-size-item','ctx-rs-color-item','ctx-rs-orient-item','ctx-rs-edit-item'];
+  rsItems.forEach(id => { const el=document.getElementById(id); if(el) el.style.display = hasSingleRoadsign ? '' : 'none'; });
+  if (hasSingleRoadsign) {
+    const rs = selObj;
+    const ssEl=document.getElementById('ctx-rs-size'); if(ssEl){ssEl.value=rs.fontSize||40; document.getElementById('ctx-rs-size-val').textContent=rs.fontSize||40;}
+    const scEl=document.getElementById('ctx-rs-color'); if(scEl) scEl.value=rs.color||'#212121';
+    const orientLbl=document.getElementById('ctx-rs-orient-label'); if(orientLbl) orientLbl.textContent=rs.orientation==='v'?'切換為橫向':'切換為縱向';
+  }
+
+  // arrowlabel inline property items (show when arrowlabel is selected)
+  const alItems = ['ctx-al-sep','ctx-al-size-item','ctx-al-color-item','ctx-al-bg-item','ctx-al-radius-item','ctx-al-edit-item'];
+  alItems.forEach(id => { const el=document.getElementById(id); if(el) el.style.display = hasSingleArrowlabel ? '' : 'none'; });
+  if (hasSingleArrowlabel) {
+    const al = selObj;
+    const sEl=document.getElementById('ctx-al-size'); if(sEl){sEl.value=al.fontSize||14; document.getElementById('ctx-al-size-val').textContent=al.fontSize||14;}
+    const cEl=document.getElementById('ctx-al-color'); if(cEl) cEl.value=al.color||'#212121';
+    const bEl=document.getElementById('ctx-al-bg'); if(bEl) bEl.value=al.bgColor||'#ffffff';
+    const nbEl=document.getElementById('ctx-al-nobg'); if(nbEl) nbEl.checked=!!al.noBg;
+    if(bEl) bEl.disabled=!!al.noBg;
+    const rEl=document.getElementById('ctx-al-radius'); if(rEl){rEl.value=al.maxRadius||300; document.getElementById('ctx-al-radius-val').textContent=al.maxRadius||300;}
+    document.getElementById('ctx-al-edit-item').style.display = al.labelType==='free' ? '' : 'none';
+  }
 
   // carlabel property items (when carlabel is selected)
   const clItems = ['ctx-cl-sep','ctx-cl-size-item','ctx-cl-color-item','ctx-cl-bg-item','ctx-cl-radius-item','ctx-cl-font-item','ctx-cl-edit-item'];
@@ -7380,6 +8176,14 @@ function showCtxMenu(e) {
   document.getElementById('ctx-refline-delete').style.display = (hasSingleRefpoint &&  rpHasRefline) ? '' : 'none';
   document.getElementById('ctx-namerp-sep').style.display   = hasSingleRefpoint ? '' : 'none';
   document.getElementById('ctx-namerp-item').style.display  = hasSingleRefpoint ? '' : 'none';
+  const hasSingleSym = selectedObjs.length === 1 && ['traffic-light','utility-pole'].includes(objects[selectedObjs[0]]?.type);
+  document.getElementById('ctx-namesym-sep').style.display  = hasSingleSym ? '' : 'none';
+  document.getElementById('ctx-namesym-item').style.display = hasSingleSym ? '' : 'none';
+  if (hasSingleSym) {
+    const symType = objects[selectedObjs[0]].type;
+    document.getElementById('ctx-namesym-item').querySelector('span').textContent =
+      symType === 'utility-pole' ? '命名電線杆' : '命名紅綠燈';
+  }
   document.getElementById('ctx-rpstyle-sep').style.display  = hasSingleRefpoint ? '' : 'none';
   document.getElementById('ctx-rpstyle-item').style.display = hasSingleRefpoint ? '' : 'none';
 
@@ -7413,8 +8217,9 @@ function showCtxMenu(e) {
     if (cs) cs.value = mm.color||'#e53935';
   }
 
-  // Flip items: hide for refline/reflabel/position-mark/size-mark/carlabel
-  const canFlip = hasObj && selectedObjs.every(i => objects[i] && !['refline','reflabel','position-mark','size-mark','carlabel'].includes(objects[i].type));
+  // Flip items: hide for refline/reflabel/position-mark/size-mark/pos-seg-mark/dimline/carlabel
+  const _NO_FLIP_TYPES = new Set(['refline','reflabel','scalebar','carlabel','arrowlabel','free-arrow','roadsign','position-mark','size-mark','pos-seg-mark','dimline']);
+  const canFlip = hasObj && selectedObjs.every(i => objects[i] && !_NO_FLIP_TYPES.has(objects[i].type));
   document.getElementById('ctx-flip-sep').style.display = canFlip ? '' : 'none';
   document.getElementById('ctx-flip-h').style.display   = canFlip ? '' : 'none';
   document.getElementById('ctx-flip-v').style.display   = canFlip ? '' : 'none';
@@ -7581,10 +8386,18 @@ function ctxDelete() {
     composite(); markDirty(); saveSnap('刪除標記線');
     return;
   }
-  // Collect car IDs being deleted to also remove their position-marks
+  // Collect IDs before splicing for cascade deletion
   const deletedCarIds = selectedObjs
     .map(i => objects[i])
     .filter(o => o && (CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type)) && o.id)
+    .map(o => o.id);
+  const deletedArrowIds = selectedObjs
+    .map(i => objects[i])
+    .filter(o => o && o.type === 'free-arrow' && o.id)
+    .map(o => o.id);
+  const deletedAnchorIds = selectedObjs
+    .map(i => objects[i])
+    .filter(o => o && _REFLABEL_ANCHOR_TYPES.has(o.type) && o.id)
     .map(o => o.id);
   [...selectedObjs].sort((a, b) => b - a).forEach(i => objects.splice(i, 1));
   // Remove orphaned position-marks
@@ -7598,6 +8411,14 @@ function ctxDelete() {
   }
   for (let i = objects.length - 1; i >= 0; i--) {
     if (objects[i].type === 'carlabel' && deletedCarIds.includes(objects[i].carId))
+      objects.splice(i, 1);
+  }
+  for (let i = objects.length - 1; i >= 0; i--) {
+    if (objects[i].type === 'arrowlabel' && deletedArrowIds.includes(objects[i].arrowId))
+      objects.splice(i, 1);
+  }
+  for (let i = objects.length - 1; i >= 0; i--) {
+    if (objects[i].type === 'reflabel' && deletedAnchorIds.includes(objects[i].refpointId))
       objects.splice(i, 1);
   }
   selectedObjs = []; syncSel();
@@ -8177,6 +8998,102 @@ function drawMarkingMotoZone(ctx, obj) {
   if (size > 4) drawMotoRiderIcon(ctx, cx, cy, size, clr);
 }
 
+function drawTrafficLight(ctx, x, y, w, h, color) {
+  const cx = x + w / 2;
+  const houseH = h * 0.68;
+  const poleW  = Math.max(2, w * 0.13);
+
+  // Pole
+  ctx.fillStyle = color || '#37474f';
+  ctx.fillRect(cx - poleW / 2, y + houseH, poleW, h - houseH);
+
+  // Arm bracket
+  ctx.fillRect(cx - poleW / 2, y + houseH * 0.42, w * 0.25, poleW * 0.7);
+
+  // Housing box
+  ctx.fillStyle = '#1a1a1a';
+  rRect(ctx, x + w * 0.1, y + h * 0.01, w * 0.8, houseH * 0.97, w * 0.1);
+  ctx.fill();
+
+  // Visor strips
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  [0.18, 0.5, 0.82].forEach(yR => {
+    rRect(ctx, x + w * 0.1, y + houseH * yR - h * 0.035, w * 0.8, h * 0.055, w * 0.04);
+    ctx.fill();
+  });
+
+  // Lights
+  const lightR = w * 0.26;
+  [[0.19, '#ef5350', '#b71c1c'], [0.5, '#ffc107', '#e65100'], [0.81, '#66bb6a', '#1b5e20']].forEach(([yR, lit, dark]) => {
+    const ly = y + houseH * yR;
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.arc(cx, ly, lightR, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = lit;
+    ctx.beginPath(); ctx.arc(cx, ly, lightR * 0.78, 0, Math.PI * 2); ctx.fill();
+    // glare
+    ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(cx - lightR * 0.2, ly - lightR * 0.25, lightR * 0.32, lightR * 0.2, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  });
+
+  // Housing highlight
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = Math.max(1, w * 0.045); ctx.lineCap = 'round';
+  rRect(ctx, x + w * 0.15, y + h * 0.03, w * 0.3, houseH * 0.92, w * 0.06); ctx.stroke();
+  ctx.restore();
+}
+
+function drawUtilityPole(ctx, x, y, w, h, color) {
+  const cx = x + w / 2;
+  const clr = color || '#5d4037';
+
+  // Main pole (slightly tapered)
+  const ptop = w * 0.09, pbot = w * 0.15;
+  ctx.fillStyle = clr;
+  ctx.beginPath();
+  ctx.moveTo(cx - pbot / 2, y + h);
+  ctx.lineTo(cx - ptop / 2, y + h * 0.06);
+  ctx.lineTo(cx + ptop / 2, y + h * 0.06);
+  ctx.lineTo(cx + pbot / 2, y + h);
+  ctx.closePath(); ctx.fill();
+
+  // Pole grain lines
+  ctx.save(); ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = Math.max(1, w * 0.025); ctx.lineCap = 'round';
+  [0.25, 0.45, 0.65].forEach(yR => {
+    const halfW = ptop / 2 + (pbot / 2 - ptop / 2) * yR;
+    ctx.beginPath(); ctx.moveTo(cx - halfW + 1, y + h * yR); ctx.lineTo(cx + halfW - 1, y + h * yR); ctx.stroke();
+  });
+  ctx.restore();
+
+  // Cross-arm
+  const armY = y + h * 0.09;
+  const armH = h * 0.055;
+  ctx.fillStyle = clr;
+  rRect(ctx, x + w * 0.04, armY, w * 0.92, armH, armH * 0.3); ctx.fill();
+
+  // Insulators (3 on cross-arm)
+  const insR = w * 0.068;
+  [0.14, 0.5, 0.86].forEach(xR => {
+    const ix = x + w * xR, iy = armY + armH;
+    // insulator body
+    ctx.fillStyle = '#78909c';
+    ctx.beginPath(); ctx.arc(ix, iy, insR, 0, Math.PI * 2); ctx.fill();
+    // top shiny cap
+    ctx.fillStyle = '#cfd8dc';
+    ctx.beginPath(); ctx.arc(ix, iy - insR * 0.3, insR * 0.55, 0, Math.PI * 2); ctx.fill();
+    // wire stub down
+    ctx.strokeStyle = '#555'; ctx.lineWidth = Math.max(1, w * 0.025);
+    ctx.beginPath(); ctx.moveTo(ix, iy + insR); ctx.lineTo(ix, iy + insR * 2.2); ctx.stroke();
+  });
+
+  // Label
+  const fs = Math.min(w * 0.34, h * 0.1);
+  if (fs >= 5) {
+    ctx.save(); ctx.fillStyle = 'rgba(255,255,255,0.82)'; ctx.font = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('電', cx, y + h * 0.58); ctx.restore();
+  }
+}
+
 function drawHydrant(ctx, x, y, w, h, color) {
   const clr = color || '#c62828';
   const cx = x + w / 2;
@@ -8239,17 +9156,24 @@ function drawHydrant(ctx, x, y, w, h, color) {
 }
 
 // ── carlabel helpers ──────────────────────────────────────
+const _labelMeasureCtx = document.createElement('canvas').getContext('2d');
+function _measureLabelHw(text, fontSize, fontFamily, pad) {
+  _labelMeasureCtx.font = `bold ${fontSize}px ${fontFamily||'sans-serif'}`;
+  return Math.max(pad, _labelMeasureCtx.measureText(text||'').width / 2 + pad);
+}
+
 function _getCarlabelMetrics(obj) {
   const car = objects.find(c => c.id === obj.carId);
   if (!car) return null;
   const cx = car.x + car.w/2 + (obj.offsetX||0);
   const cy = car.y + car.h/2 + (obj.offsetY||0);
   let r, hw, hh;
+  const fs = obj.fontSize||16;
   if (obj.labelType === 'letter') {
-    r = hw = hh = Math.max(12, (obj.fontSize||16)*0.72 + 5);
+    r = hw = hh = Math.max(12, fs*0.72 + 5);
   } else {
-    hw = Math.max(16, (obj.fontSize||16)*0.35*Math.max(1,(obj.text||'').length) + 12);
-    hh = Math.max(10, (obj.fontSize||16)*0.65 + 6);
+    hw = _measureLabelHw(obj.text, fs, obj.fontFamily, 12);
+    hh = Math.max(10, fs*0.65 + 6);
     r  = Math.sqrt(hw*hw + hh*hh);
   }
   return { cx, cy, r, hw, hh };
@@ -8292,6 +9216,52 @@ function drawCarlabel(ctx, obj) {
   ctx.font = `bold ${obj.fontSize||16}px ${obj.fontFamily||'sans-serif'}`;
   ctx.fillStyle   = textColor;
   ctx.textAlign   = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(obj.text||'', cx, cy);
+}
+
+// ── arrowlabel helpers ────────────────────────────────────
+function _getArrowlabelMetrics(obj) {
+  const arrow = objects.find(a => a.id === obj.arrowId);
+  if (!arrow || !arrow.pts || arrow.pts.length < 1) return null;
+  const cx = arrow.pts[0].x + (obj.offsetX||0);
+  const cy = arrow.pts[0].y + (obj.offsetY||0);
+  const fs = obj.fontSize||14;
+  const hw = _measureLabelHw(obj.text, fs, obj.fontFamily, 10);
+  const hh = Math.max(10, fs*0.65 + 6);
+  return { cx, cy, hw, hh };
+}
+
+function _syncArrowlabelBBox(obj) {
+  const m = _getArrowlabelMetrics(obj);
+  if (!m) return;
+  obj.x = m.cx - m.hw; obj.y = m.cy - m.hh;
+  obj.w = m.hw*2;       obj.h = m.hh*2;
+}
+
+function ptOnArrowlabel(pt, obj) {
+  const m = _getArrowlabelMetrics(obj);
+  if (!m) return false;
+  return Math.abs(pt.x - m.cx) <= m.hw && Math.abs(pt.y - m.cy) <= m.hh;
+}
+
+function drawArrowlabel(ctx, obj) {
+  const m = _getArrowlabelMetrics(obj);
+  if (!m) return;
+  _syncArrowlabelBBox(obj);
+  const { cx, cy, hw, hh } = m;
+  const textColor = obj.color || '#212121';
+  const bgColor   = obj.bgColor || '#ffffff';
+  if (!obj.noBg) {
+    ctx.fillStyle   = bgColor;
+    ctx.strokeStyle = textColor;
+    ctx.lineWidth   = Math.max(1, 1.5);
+    ctx.fillRect(cx-hw, cy-hh, hw*2, hh*2);
+    ctx.strokeRect(cx-hw, cy-hh, hw*2, hh*2);
+  }
+  ctx.font         = `bold ${obj.fontSize||14}px ${obj.fontFamily||'sans-serif'}`;
+  ctx.fillStyle    = textColor;
+  ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(obj.text||'', cx, cy);
 }
@@ -8412,6 +9382,123 @@ function drawScalebar(ctx, obj) {
   ctx.restore();
 }
 
+// ── Free Arrow ───────────────────────────────────────────
+function _dpSimplify(pts, epsilon) {
+  if (pts.length <= 2) return pts.slice();
+  let maxD = 0, maxI = 0;
+  const p1 = pts[0], p2 = pts[pts.length - 1];
+  const ddx = p2.x - p1.x, ddy = p2.y - p1.y;
+  const len2 = ddx*ddx + ddy*ddy;
+  for (let i = 1; i < pts.length - 1; i++) {
+    let d;
+    if (len2 === 0) {
+      d = Math.hypot(pts[i].x - p1.x, pts[i].y - p1.y);
+    } else {
+      const tc = Math.max(0, Math.min(1, ((pts[i].x-p1.x)*ddx + (pts[i].y-p1.y)*ddy) / len2));
+      d = Math.hypot(pts[i].x - (p1.x + tc*ddx), pts[i].y - (p1.y + tc*ddy));
+    }
+    if (d > maxD) { maxD = d; maxI = i; }
+  }
+  if (maxD > epsilon) {
+    const left = _dpSimplify(pts.slice(0, maxI + 1), epsilon);
+    const right = _dpSimplify(pts.slice(maxI), epsilon);
+    return [...left.slice(0, -1), ...right];
+  }
+  return [pts[0], pts[pts.length - 1]];
+}
+
+function syncFreeArrowBBox(obj) {
+  const pts = obj.pts;
+  if (!pts || pts.length === 0) { obj.x=0; obj.y=0; obj.w=1; obj.h=1; return; }
+  let minX=pts[0].x, minY=pts[0].y, maxX=pts[0].x, maxY=pts[0].y;
+  for (const p of pts) {
+    if (p.x < minX) minX=p.x; if (p.y < minY) minY=p.y;
+    if (p.x > maxX) maxX=p.x; if (p.y > maxY) maxY=p.y;
+  }
+  const pad = (obj.lineWidth||3) / 2 + 10;
+  obj.x = minX - pad; obj.y = minY - pad;
+  obj.w = Math.max(1, maxX - minX + pad*2);
+  obj.h = Math.max(1, maxY - minY + pad*2);
+}
+
+function ptOnFreeArrow(pt, obj) {
+  const pts = obj.pts;
+  if (!pts || pts.length < 2) return false;
+  const thresh = Math.max(8, (obj.lineWidth||3) / 2 + 5);
+  const t2 = thresh * thresh;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p1 = pts[i], p2 = pts[i+1];
+    const dx = p2.x-p1.x, dy = p2.y-p1.y;
+    const len2 = dx*dx+dy*dy;
+    let cx, cy;
+    if (len2 === 0) { cx = p1.x; cy = p1.y; }
+    else {
+      const t = Math.max(0, Math.min(1, ((pt.x-p1.x)*dx + (pt.y-p1.y)*dy) / len2));
+      cx = p1.x + t*dx; cy = p1.y + t*dy;
+    }
+    if ((pt.x-cx)*(pt.x-cx) + (pt.y-cy)*(pt.y-cy) <= t2) return true;
+  }
+  return false;
+}
+
+function drawFreeArrow(ctx, obj) {
+  const pts = obj.pts;
+  if (!pts || pts.length < 2) return;
+  const lw = obj.lineWidth || 3;
+  const col = obj.color || '#e53935';
+  const n = pts.length;
+
+  // Direction at tip: tangent of last segment
+  const tip = pts[n-1], prev = pts[n-2];
+  const dx = tip.x - prev.x, dy = tip.y - prev.y;
+  const d = Math.hypot(dx, dy);
+  const ux = d > 0.001 ? dx/d : 1;
+  const uy = d > 0.001 ? dy/d : 0;
+  const nx = -uy, ny = ux;  // perpendicular
+
+  ctx.save();
+  ctx.fillStyle = col;
+  ctx.strokeStyle = col;
+  ctx.lineJoin = 'round';
+
+  // 1. Round dot at start
+  ctx.beginPath();
+  ctx.arc(pts[0].x, pts[0].y, lw/2, 0, Math.PI*2);
+  ctx.fill();
+
+  // 2. Stroke body with butt cap (flat square end at tip)
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'butt';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  if (n === 2) {
+    ctx.lineTo(pts[1].x, pts[1].y);
+  } else {
+    ctx.lineTo((pts[0].x+pts[1].x)/2, (pts[0].y+pts[1].y)/2);
+    for (let i = 1; i < n-1; i++) {
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y,
+        (pts[i].x+pts[i+1].x)/2, (pts[i].y+pts[i+1].y)/2);
+    }
+    ctx.lineTo(pts[n-1].x, pts[n-1].y);
+  }
+  ctx.stroke();
+
+  // 3. Long isosceles triangle from the flat butt end, pointing in travel direction
+  //    Base: lw*3 wide (flares out clearly beyond stroke body)
+  //    Height: lw*6 long
+  const headLen  = Math.max(lw * 6, 36);
+  const halfBase = Math.max(lw * 1.5, 9);
+  const tipPt = { x: tip.x + ux*headLen, y: tip.y + uy*headLen };
+  ctx.beginPath();
+  ctx.moveTo(tipPt.x, tipPt.y);
+  ctx.lineTo(tip.x + nx*halfBase, tip.y + ny*halfBase);
+  ctx.lineTo(tip.x - nx*halfBase, tip.y - ny*halfBase);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
 function setRefpointStyle(style) {
   hideCtxMenu();
   selectedObjs.forEach(i => { if (objects[i]?.type === 'refpoint') objects[i].style = style; });
@@ -8453,6 +9540,11 @@ function _applyGlobalScale(newScale) {
       if (o.maxRadius != null) o.maxRadius *= f;
       continue;
     }
+    if (t === 'arrowlabel') {
+      if (o.offsetX != null) { o.offsetX *= f; o.offsetY *= f; }
+      if (o.maxRadius != null) o.maxRadius *= f;
+      continue;
+    }
     if (t === 'reflabel') {
       if (o.radius != null) o.radius *= f;
       continue;
@@ -8474,6 +9566,18 @@ function _applyGlobalScale(newScale) {
     if (t === 'marking-turn' || t === 'marking-chanl') {
       if (o.cx != null) { o.cx *= f; o.cy *= f; }
       if (o.a1x != null) { o.a1x *= f; o.a1y *= f; o.a2x *= f; o.a2y *= f; }
+      continue;
+    }
+    if (t === 'free-arrow') {
+      if (o.pts) o.pts.forEach(p => { p.x *= f; p.y *= f; });
+      syncFreeArrowBBox(o);
+      continue;
+    }
+    if (t === 'roadsign') {
+      if (o.x != null) o.x *= f;
+      if (o.y != null) o.y *= f;
+      if (o.fontSize != null) o.fontSize = Math.max(10, Math.round(o.fontSize * f));
+      _syncRoadsignBBox(o);
       continue;
     }
     // All remaining types use x, y, w, h
@@ -9027,13 +10131,13 @@ const _MTEXT_MAP = {
   'stop':      { text: '停',       dir: 'v' },
   'yield':     { text: '讓',       dir: 'v' },
   'slow':      { text: '慢',       dir: 'v' },
-  'no-moto':   { text: '禁行机车', dir: 'v' },
+  'no-moto':   { text: '禁行機車', dir: 'v' },
   'crosswalk': { text: '人行道',   dir: 'v' },
-  'wait-turn': { text: '待转区',   dir: 'h' },
-  'bus-only':  { text: '公车专用', dir: 'v' },
-  'bus-stop':  { text: '公车停靠区', dir: 'v' },
-  'moto-only': { text: '机车专用', dir: 'v' },
-  'moto-slow': { text: '机慢车专用', dir: 'v' },
+  'wait-turn': { text: '待轉區',   dir: 'h' },
+  'bus-only':  { text: '公車專用', dir: 'v' },
+  'bus-stop':  { text: '公車停靠區', dir: 'v' },
+  'moto-only': { text: '機車專用', dir: 'v' },
+  'moto-slow': { text: '機慢車專用', dir: 'v' },
 };
 function markingTextVariantToText(v) {
   const e = _MTEXT_MAP[v]; return e ? e.text : '停';
@@ -9678,15 +10782,108 @@ function cmdExportImage() {
 // ── 列印 ─────────────────────────────────────────────────
 function cmdPrint() {
   composite();
-  const url = dc.toDataURL('image/png');
-  const w = window.open('', '_blank');
-  w.document.write(
-    '<html><head><title>' + projName + '</title>' +
-    '<style>body{margin:0}img{max-width:100%;display:block}' +
-    '@media print{@page{margin:0}}</style></head>' +
-    '<body><img src="' + url + '" onload="window.print();window.close()"></body></html>'
+  // Crop to A4 content only (strip 300px CANVAS_MARGIN from all sides)
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  tmp.getContext('2d').drawImage(dc, -CANVAS_MARGIN, -CANVAS_MARGIN);
+  const url = tmp.toDataURL('image/png');
+  const pw = window.open('', '_blank');
+  pw.document.write(
+    `<!DOCTYPE html><html><head><title>${projName||'列印'}</title>` +
+    `<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#fff}` +
+    `img{display:block;width:297mm;height:210mm;max-width:none}` +
+    `@media print{@page{size:297mm 210mm;margin:0}}</style></head>` +
+    `<body><img src="${url}" onload="window.print();window.close()"></body></html>`
   );
-  w.document.close();
+  pw.document.close();
+}
+
+// ── Stamp tools ───────────────────────────────────────────
+function _activateStamp(text, fontSize) {
+  const fs = fontSize || 14;
+  const lines = text.split('\n');
+  const lh = fs * 1.4;
+  const tmp = document.createElement('canvas').getContext('2d');
+  tmp.font = `${fs}px sans-serif`;
+  const maxW = Math.max(...lines.map(l => tmp.measureText(l).width));
+  _pendingStamp = { text, fontSize: fs, w: Math.round(maxW + 16), h: Math.round(lines.length * lh + 8) };
+  _stampPt = null;
+  dc.style.cursor = 'crosshair';
+  composite();
+}
+
+function cmdIncidentStamp() {
+  const now = new Date();
+  const rocY = now.getFullYear() - 1911;
+  const m = now.getMonth() + 1, d = now.getDate();
+  const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+  const defTime = `${rocY}年${m}月${d}日${hh}時${mm}分`;
+  openModal('事故發生資訊',
+    `<div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="min-width:70px;font-size:12px">發生時間</label>
+        <input id="stamp-time" value="${defTime}" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg,#1e1e2e);color:var(--text)">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="min-width:70px;font-size:12px">發生地點</label>
+        <input id="stamp-loc" placeholder="輸入地點" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg,#1e1e2e);color:var(--text)">
+      </div>
+    </div>`,
+    [
+      { text:'確定', cls:'btn primary', fn: () => {
+        const t = document.getElementById('stamp-time').value.trim();
+        const l = document.getElementById('stamp-loc').value.trim();
+        _activateStamp(`發生時間：${t}　　　地點：${l}`, 14);
+        closeModal();
+      }},
+      { text:'取消', cls:'btn', fn: closeModal }
+    ]
+  );
+  setTimeout(() => document.getElementById('stamp-time')?.focus(), 80);
+}
+
+function _plateAddRow() {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  if (_plateCount >= 10) return;
+  const list = document.getElementById('plate-list');
+  if (!list) return;
+  const i = _plateCount++;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px';
+  div.innerHTML = `<label style="min-width:70px;font-size:12px">${letters[i]}車車牌</label><input id="plate-${i}" placeholder="輸入車牌" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg,#1e1e2e);color:var(--text)">`;
+  list.appendChild(div);
+  div.querySelector('input').focus();
+}
+
+function cmdPlateStamp() {
+  _plateCount = 2;
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let rows = '';
+  for (let i = 0; i < 2; i++) {
+    rows += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="min-width:70px;font-size:12px">${letters[i]}車車牌</label><input id="plate-${i}" placeholder="輸入車牌" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg,#1e1e2e);color:var(--text)"></div>`;
+  }
+  openModal('車牌清單',
+    `<div style="display:flex;flex-direction:column;gap:0">
+      <button class="btn" onclick="_plateAddRow()" style="margin-bottom:10px;align-self:flex-start">＋ 新增車輛</button>
+      <div id="plate-list">${rows}</div>
+    </div>`,
+    [
+      { text:'確定', cls:'btn primary', fn: () => {
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const lines = [];
+        for (let i = 0; i < _plateCount; i++) {
+          const inp = document.getElementById(`plate-${i}`);
+          const v = inp?.value.trim();
+          if (v) lines.push(`${letters[i]}車：${v}`);
+        }
+        if (!lines.length) { closeModal(); return; }
+        _activateStamp(lines.join('\n'), 14);
+        closeModal();
+      }},
+      { text:'取消', cls:'btn', fn: closeModal }
+    ]
+  );
+  setTimeout(() => document.getElementById('plate-0')?.focus(), 80);
 }
 
 // ── Zoom ─────────────────────────────────────────────────
@@ -9756,7 +10953,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && tool === 'select' && selectedObjs.length > 0) {
     e.preventDefault(); ctxDelete();
   }
-  if (e.key === 'Escape') { if (pendingRefline) { cancelPendingRefline(); return; } if (pendingDimline) { setTool('select'); return; } closeModal(); }
+  if (e.key === 'Escape') { if (_formatPainter) { _formatPainter = null; dc.style.cursor = ''; updatePropsPanel(); return; } if (_pendingStamp) { _pendingStamp = null; _stampPt = null; dc.style.cursor = ''; composite(); return; } if (pendingRefline) { cancelPendingRefline(); return; } if (pendingDimline) { setTool('select'); return; } closeModal(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); cmdSave(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
