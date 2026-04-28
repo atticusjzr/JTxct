@@ -3299,15 +3299,17 @@ function _editConsForEdgeDrag(car, edgeIdx, mx, my) {
   ];
 }
 
-// Drag-time wrapper: if the car has any positional locks, route the drag intent
-// (edit constraints) through the unified solver so other DOFs auto-adjust.
-// Returns true if solver applied successfully (caller skips direct-set);
-// false if no locks (caller should set DOFs directly) or solver failed.
-function _solvedDragEdit(car, editCons) {
-  const hasPosLock = objects.some(o =>
+function _hasPosLock(car) {
+  return car && objects.some(o =>
     (o.type === 'position-mark' || o.type === 'pos-seg-mark')
     && o.carId === car.id && o.constraintLocked);
-  if (!hasPosLock) return false;
+}
+
+// Drag-time solver entry. Caller is responsible for checking _hasPosLock first.
+// Returns true on solver success, false on solver failure (state rolled back to
+// call-start). Either way, caller MUST NOT direct-set DOFs after this — direct
+// set on failure would bypass the solver and break locks.
+function _solvedDragEdit(car, editCons) {
   const rl = _getCarRefline(car);
   if (!rl) return false;
   computeReflineP1(rl);
@@ -3316,7 +3318,6 @@ function _solvedDragEdit(car, editCons) {
   if (len < 1) return false;
   const axes = { tx: dx/len, ty: dy/len, nx: -dy/len, ny: dx/len };
   const locks = _collectHardLocks(car, rl, null, axes);
-  // looser tolerance + fewer iterations for live drag
   return _runConstraintEdit(car, rl, locks, editCons, 2, 1.0);
 }
 
@@ -4581,9 +4582,10 @@ function propSetOpacity(v) {
 function propSetRotation(v) {
   const o = _propObj(); if (!o) return;
   const newRot = (parseFloat(v) || 0) * Math.PI / 180;
-  if ((CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type))
-      && _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }])) {
-    // solver succeeded; rotation + auto-adjustments applied
+  const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
+  if (isVehicle && _hasPosLock(o)) {
+    _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }]);
+    // success or failure: do not direct-set rotation (would break locks on failure)
   } else {
     o.rotation = newRot;
   }
@@ -4592,9 +4594,9 @@ function propSetRotation(v) {
 function propSetRotationLive(v) {
   const o = _propObj(); if (!o) return;
   const newRot = (parseFloat(v) || 0) * Math.PI / 180;
-  if ((CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type))
-      && _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }])) {
-    // solver succeeded
+  const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
+  if (isVehicle && _hasPosLock(o)) {
+    _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }]);
   } else {
     o.rotation = newRot;
   }
@@ -6038,16 +6040,14 @@ function onMove(e) {
         const orig = selectObjOrig[i];
         const o = objects[idx];
         const tgtX = orig.x + dx, tgtY = orig.y + dy;
-        if (CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type)) {
-          // Route vehicle move through the solver so locks auto-adjust other DOFs
+        const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
+        if (isVehicle && _hasPosLock(o)) {
           const tgtCx = tgtX + orig.w/2, tgtCy = tgtY + orig.h/2;
           const editCons = [
             { type: 'CX', target: tgtCx, current: o.x + o.w/2 },
             { type: 'CY', target: tgtCy, current: o.y + o.h/2 },
           ];
-          if (!_solvedDragEdit(o, editCons)) {
-            o.x = tgtX; o.y = tgtY;
-          }
+          _solvedDragEdit(o, editCons);
         } else {
           o.x = tgtX; o.y = tgtY;
         }
@@ -6134,13 +6134,11 @@ function onMove(e) {
       const obj = objects[selectedObjs[0]];
       const _boxMarking = new Set(['marking-grid','marking-moto-zone','marking-parking',
         'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle','marking-text']);
-      // Vehicles with locks: route through solver
-      let solved = false;
-      if (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) {
+      const isVehicle = CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type);
+      if (isVehicle && _hasPosLock(obj)) {
         const editCons = _editConsForCornerDrag(obj, selectCorner, pt.x, pt.y, _resizeCornerMode);
-        if (editCons) solved = _solvedDragEdit(obj, editCons);
-      }
-      if (!solved) {
+        if (editCons) _solvedDragEdit(obj, editCons);
+      } else {
         if (obj.type === 'marking-sepisle' || _boxMarking.has(obj.type)) {
           resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
         } else if (obj.type.startsWith('marking-')) {
@@ -6151,20 +6149,6 @@ function onMove(e) {
         const orig0r = selectObjOrig[0];
         if (_resizeCornerMode === 'w-only') obj.h = orig0r.h;
         else if (_resizeCornerMode === 'h-only') obj.w = orig0r.w;
-        if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
-          const ld = _lockDragInfo, orig0 = orig0r;
-          let lxS, lyS;
-          if (ld.isMotoWheel) {
-            const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
-            lxS = r.lx; lyS = r.ly;
-          } else {
-            lxS = ld.localX * obj.w / orig0.w;
-            lyS = ld.localY * obj.h / orig0.h;
-          }
-          const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
-          obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
-          obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
-        }
       }
       _computeResizeGuides();
     } else if (selectState === 'edge') {
@@ -6186,28 +6170,12 @@ function onMove(e) {
           resizeMarkingLength(obj, selectCorner === 1, pt.x, pt.y);
         }
       } else {
-        // Vehicles with locks: try solver first
-        let solved = false;
-        if (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) {
+        const isVehicle = CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type);
+        if (isVehicle && _hasPosLock(obj)) {
           const editCons = _editConsForEdgeDrag(obj, selectCorner, pt.x, pt.y);
-          if (editCons) solved = _solvedDragEdit(obj, editCons);
-        }
-        if (!solved) {
+          if (editCons) _solvedDragEdit(obj, editCons);
+        } else {
           resizeEdge(obj, selectCorner, pt.x, pt.y);
-          if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
-            const ld = _lockDragInfo, orig0 = selectObjOrig[0];
-            let lxS, lyS;
-            if (ld.isMotoWheel) {
-              const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
-              lxS = r.lx; lyS = r.ly;
-            } else {
-              lxS = ld.localX * obj.w / orig0.w;
-              lyS = ld.localY * obj.h / orig0.h;
-            }
-            const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
-            obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
-            obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
-          }
         }
       }
       _computeResizeGuides();
@@ -6260,9 +6228,9 @@ function onMove(e) {
       } else {
         let newRot = obj.rotation + delta;
         if (e.shiftKey) newRot = Math.round(newRot / (Math.PI / 12)) * (Math.PI / 12);
-        if ((CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))
-            && _solvedDragEdit(obj, [{ type: 'R', target: newRot, current: obj.rotation }])) {
-          // Solver applied rotation + auto-adjusted other DOFs to keep locks
+        const isVehicle = CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type);
+        if (isVehicle && _hasPosLock(obj)) {
+          _solvedDragEdit(obj, [{ type: 'R', target: newRot, current: obj.rotation }]);
         } else {
           obj.rotation = newRot;
         }
