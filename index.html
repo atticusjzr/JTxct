@@ -3460,7 +3460,9 @@ function _getCarHandleConstraints(car) {
     disabledCorners.add(C);
     disabledEdges.add(C);
     disabledEdges.add((C + 3) % 4);
-    disabledRotate = true;
+    // Rotation stays enabled at 1-PM-lock: the solver routes it through and adjusts
+    // car position so the locked corner stays pinned. (For 2+ locks rotation is
+    // already disabled in the branches above.)
     const next = (C + 1) % 4, prev = (C + 3) % 4;
     const nextMode = (C % 2 === 0) ? 'w-only' : 'h-only';
     const prevMode = (C % 2 === 0) ? 'h-only' : 'w-only';
@@ -4502,24 +4504,24 @@ function propSetOpacity(v) {
 }
 function propSetRotation(v) {
   const o = _propObj(); if (!o) return;
-  if (CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type)) {
-    const snap = _snapshotHardLocks(o);
-    const prev = o.rotation;
-    o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
-    if (!_hardLocksOK(o, snap)) {
-      o.rotation = prev;
-      showToast?.('鎖定的線段會被破壞，旋轉已還原');
-      composite(); updatePropsPanel?.();
-      return;
-    }
+  const newRot = (parseFloat(v) || 0) * Math.PI / 180;
+  if ((CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type))
+      && _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }])) {
+    // solver succeeded; rotation + auto-adjustments applied
   } else {
-    o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
+    o.rotation = newRot;
   }
   composite(); markDirty(); saveSnap('旋轉角度');
 }
 function propSetRotationLive(v) {
   const o = _propObj(); if (!o) return;
-  o.rotation = (parseFloat(v) || 0) * Math.PI / 180;
+  const newRot = (parseFloat(v) || 0) * Math.PI / 180;
+  if ((CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type))
+      && _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }])) {
+    // solver succeeded
+  } else {
+    o.rotation = newRot;
+  }
   composite(); markDirty();
 }
 function propToggleFlip(axis) {
