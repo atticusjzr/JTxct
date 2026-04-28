@@ -2839,17 +2839,35 @@ function _getLockedCornerInfo(car) {
   const res = [];
   for (const o of objects) {
     if (o.type !== 'position-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+    const isMotoWheel = MOTO_TYPES.has(car.type);
     let corners;
-    if (MOTO_TYPES.has(car.type)) corners = getMotoWheelBottoms(car);
+    if (isMotoWheel) corners = getMotoWheelBottoms(car);
     else corners = o.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car);
     const c = corners[o.cornerIdx];
     if (!c) continue;
     const cx = car.x + car.w/2, cy = car.y + car.h/2;
     const cos = Math.cos(car.rotation), sin = Math.sin(car.rotation);
     const wx = c.x - cx, wy = c.y - cy;
-    res.push({ worldX: c.x, worldY: c.y, localX: wx*cos + wy*sin, localY: -wx*sin + wy*cos });
+    res.push({
+      worldX: c.x, worldY: c.y,
+      localX: wx*cos + wy*sin, localY: -wx*sin + wy*cos,
+      cornerIdx: o.cornerIdx, isMotoWheel, mode: o.mode,
+    });
   }
   return res;
+}
+
+// Recompute the locked anchor's local position for the given car dimensions.
+// Needed because moto side-view wheel ly is non-linear in h (uses min(h*0.19, w*0.12)).
+function _recomputeLockedLocal(ld, w, h, type, variant) {
+  if (!ld || !ld.isMotoWheel || typeof ld.cornerIdx !== 'number') {
+    return { lx: ld.localX, ly: ld.localY };
+  }
+  const tmp = { x: 0, y: 0, w, h, rotation: 0, type, variant };
+  const pts = getMotoWheelBottoms(tmp);
+  const pt = pts[ld.cornerIdx];
+  if (!pt) return { lx: ld.localX, ly: ld.localY };
+  return { lx: pt.x - w/2, ly: pt.y - h/2 };
 }
 
 // Returns unified handle constraints for a car based on all locked position/size marks.
@@ -4995,7 +5013,11 @@ function onDown(e) {
             if (lck.length >= 1) {
               // Has locked position-mark
               const lc = lck[0];
-              _lockDragInfo = { fixedPt: { x: lc.worldX, y: lc.worldY }, localX: lc.localX, localY: lc.localY };
+              _lockDragInfo = {
+                fixedPt: { x: lc.worldX, y: lc.worldY },
+                localX: lc.localX, localY: lc.localY,
+                cornerIdx: lc.cornerIdx, isMotoWheel: lc.isMotoWheel,
+              };
               if (hit.mode) {
                 // Restricted adjacent corner: anchor to normal diagonal so resize math works
                 anchorWorld = getCorners(orig)[(hit.idx + 2) % 4];
@@ -5089,6 +5111,7 @@ function onDown(e) {
               _lockDragInfo = {
                 fixedPt: { x: lc.worldX, y: lc.worldY },
                 localX: lc.localX, localY: lc.localY,
+                cornerIdx: lc.cornerIdx, isMotoWheel: lc.isMotoWheel,
                 origRot: orig.rotation,
                 startAngle: Math.atan2(pt.y - lc.worldY, pt.x - lc.worldX)
               };
@@ -5421,8 +5444,15 @@ function onMove(e) {
       // Re-anchor fixed point (locked body corner or size-mark diagonal anchor)
       if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
         const ld = _lockDragInfo, orig0 = orig0r;
-        const lxS = ld.localX * obj.w / orig0.w;
-        const lyS = ld.localY * obj.h / orig0.h;
+        let lxS, lyS;
+        if (ld.isMotoWheel) {
+          // Moto wheel ly is non-linear in h; recompute from new dimensions
+          const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
+          lxS = r.lx; lyS = r.ly;
+        } else {
+          lxS = ld.localX * obj.w / orig0.w;
+          lyS = ld.localY * obj.h / orig0.h;
+        }
         const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
         obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
         obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
@@ -7552,8 +7582,14 @@ function _applyConstraint(obj, val) {
 
     // Re-anchor car so locked PM corner stays at its world position
     if (lc) {
-      const lxS = lc.localX * car.w / orig_w;
-      const lyS = lc.localY * car.h / orig_h;
+      let lxS, lyS;
+      if (lc.isMotoWheel) {
+        const r = _recomputeLockedLocal(lc, car.w, car.h, car.type, car.variant);
+        lxS = r.lx; lyS = r.ly;
+      } else {
+        lxS = lc.localX * car.w / orig_w;
+        lyS = lc.localY * car.h / orig_h;
+      }
       const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
       car.x = lc.worldX - (lxS*cosR - lyS*sinR) - car.w/2;
       car.y = lc.worldY - (lxS*sinR + lyS*cosR) - car.h/2;
