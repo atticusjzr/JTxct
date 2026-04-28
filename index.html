@@ -2988,7 +2988,8 @@ function drawPositionMark(ctx, obj) {
   const dx = f.x - c.x, dy = f.y - c.y;
   if (Math.sqrt(dx*dx + dy*dy) < 1) return;
   const clr = obj.color || '#1565c0';
-  const lw  = obj.thickness || 1.5;
+  const baseLw = obj.thickness || 1.5;
+  const lw  = obj.constraintLocked ? baseLw * 1.5 : baseLw;
   const hs  = Math.max(7, lw * 4);
   ctx.save();
   ctx.strokeStyle = clr;
@@ -3003,7 +3004,8 @@ function drawPositionMark(ctx, obj) {
   if (obj.measure && obj.measure.show) {
     const pos = posMarkMeasurePos(obj);
     if (pos) {
-      const text = posMarkMeasureText(obj);
+      let text = posMarkMeasureText(obj);
+      if (obj.constraintLocked && text) text = '🔒' + text;
       if (text) {
         const sz = obj.measure.size || 11;
         ctx.save();
@@ -3098,7 +3100,8 @@ function drawPosSeg(ctx, obj) {
   const len = Math.sqrt(dx*dx + dy*dy);
   if (len < 1) return;
   const clr = obj.color || '#43a047';
-  const lw  = obj.thickness || 1.5;
+  const baseLw = obj.thickness || 1.5;
+  const lw  = obj.constraintLocked ? baseLw * 1.5 : baseLw;
   const nx = dx/len, ny = dy/len;
   const px = -ny, py = nx;
   const TICK = 8;
@@ -3118,7 +3121,8 @@ function drawPosSeg(ctx, obj) {
     const t = m.t ?? 0.5, d = m.d ?? 15;
     const mx = a.x + dx*t + px*d, my = a.y + dy*t + py*d;
     const cmVal = _measDisplay(len);
-    const text = m.text || cmVal;
+    let text = m.text || cmVal;
+    if (obj.constraintLocked && text) text = '🔒' + text;
     const sz = m.size || 11;
     ctx.font = `bold ${sz}px sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -3252,7 +3256,8 @@ function drawSizeMark(ctx, sm) {
   const dx = ep.b.x - ep.a.x, dy = ep.b.y - ep.a.y;
   if (Math.sqrt(dx*dx + dy*dy) < 1) return;
   const clr = sm.color || '#212121';
-  const lw  = sm.thickness || 1.5;
+  const baseLw = sm.thickness || 1.5;
+  const lw  = sm.constraintLocked ? baseLw * 1.5 : baseLw;
   const hs  = Math.max(7, lw * 4);
   ctx.save();
   ctx.strokeStyle = clr; ctx.fillStyle = clr;
@@ -3265,7 +3270,8 @@ function drawSizeMark(ctx, sm) {
   if (sm.measure && sm.measure.show) {
     const pos = sizeMarkMeasurePos(sm);
     if (pos) {
-      const text = sizeMarkMeasureText(sm);
+      let text = sizeMarkMeasureText(sm);
+      if (sm.constraintLocked && text) text = '🔒' + text;
       if (text) {
         const sz = sm.measure.size || 11;
         ctx.save();
