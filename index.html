@@ -2998,66 +2998,86 @@ function _getCarHandleConstraints(car) {
   const cornerModes     = new Map();
   let   disabledRotate  = false;
 
-  for (const o of objects) {
-    if (o.type !== 'position-mark' || o.carId !== car.id || !o.constraintLocked) continue;
-    if (typeof o.cornerIdx !== 'number') continue;
-    let C = o.cornerIdx;
-    if (MOTO_TYPES.has(car.type)) {
-      // Moto PM cornerIdx (0=rear,1=front) → nearest bbox corner by local quadrant
-      const pts = getMotoWheelBottoms(car);
-      const pt = pts[C];
-      if (pt) {
-        const cx = car.x + car.w/2, cy = car.y + car.h/2;
-        const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
-        const lx = (pt.x-cx)*cosR + (pt.y-cy)*sinR;
-        const ly = -(pt.x-cx)*sinR + (pt.y-cy)*cosR;
-        C = lx >= 0 ? (ly < 0 ? 1 : 2) : (ly < 0 ? 0 : 3);
-      }
+  const state = _buildCornerLocks(car);
+  if (!state) return { disabledCorners, disabledEdges, cornerModes, disabledRotate };
+
+  // Map a lock-point to its nearest bbox corner index (for handle UI).
+  // body PM: cornerIdx is already the bbox idx. wheel PM (incl. moto): map by local quadrant.
+  function pointToBbox(p) {
+    if (p.mode === 'body' && !state.isMoto) return p.cornerIdx;
+    const cx = car.x + car.w/2, cy = car.y + car.h/2;
+    const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+    const lx = (p.worldX-cx)*cosR + (p.worldY-cy)*sinR;
+    const ly = -(p.worldX-cx)*sinR + (p.worldY-cy)*cosR;
+    return lx >= 0 ? (ly < 0 ? 1 : 2) : (ly < 0 ? 0 : 3);
+  }
+
+  // Y-locked bbox corners (from PM locks). Pos-seg-mark X-only locks don't disable handles
+  // by themselves — the editing logic handles them.
+  const yBbox = new Set();
+  for (const p of state.points) {
+    if (p.yLocked) yBbox.add(pointToBbox(p));
+  }
+  const arr = [...yBbox];
+
+  if (arr.length >= 3) {
+    // Full freeze
+    for (let i = 0; i < 4; i++) { disabledCorners.add(i); disabledEdges.add(i); }
+    disabledRotate = true;
+  } else if (arr.length === 2) {
+    const [a, b] = arr;
+    disabledRotate = true;
+    for (const C of [a, b]) {
+      disabledCorners.add(C);
+      disabledEdges.add(C);
+      disabledEdges.add((C + 3) % 4);
     }
+    const da = Math.abs(a - b);
+    if (da === 2) {
+      // Diagonal: cannot change w/h/rotation
+      for (let i = 0; i < 4; i++) { disabledCorners.add(i); disabledEdges.add(i); }
+    } else {
+      // Adjacent (da===1 or 3): classify pair
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      const isLengthPair = (lo === 0 && hi === 1) || (lo === 2 && hi === 3); // shares local Y
+      const remainingMode = isLengthPair ? 'h-only' : 'w-only';
+      for (let i = 0; i < 4; i++) {
+        if (!disabledCorners.has(i)) cornerModes.set(i, remainingMode);
+      }
+      if (isLengthPair) { disabledEdges.add(1); disabledEdges.add(3); }
+      else              { disabledEdges.add(0); disabledEdges.add(2); }
+    }
+  } else if (arr.length === 1) {
+    const C = arr[0];
     disabledCorners.add(C);
     disabledEdges.add(C);
     disabledEdges.add((C + 3) % 4);
     disabledRotate = true;
-    const next     = (C + 1) % 4;
-    const prev     = (C + 3) % 4;
+    const next = (C + 1) % 4, prev = (C + 3) % 4;
     const nextMode = (C % 2 === 0) ? 'w-only' : 'h-only';
     const prevMode = (C % 2 === 0) ? 'h-only' : 'w-only';
-    if (!disabledCorners.has(next)) {
-      const cur = cornerModes.get(next);
-      cornerModes.set(next, (cur != null && cur !== nextMode) ? null : nextMode);
-    }
-    if (!disabledCorners.has(prev)) {
-      const cur = cornerModes.get(prev);
-      cornerModes.set(prev, (cur != null && cur !== prevMode) ? null : prevMode);
-    }
+    cornerModes.set(next, nextMode);
+    cornerModes.set(prev, prevMode);
   }
 
-  for (const o of objects) {
-    if (o.type !== 'size-mark' || o.carId !== car.id || !o.constraintLocked) continue;
-    if (o.axis === 'length') {
-      // car.w locked → disable edges 1,3; restrict corners to h-only
-      disabledEdges.add(1); disabledEdges.add(3);
-      for (let i = 0; i < 4; i++) {
-        if (disabledCorners.has(i)) continue;
-        const cur = cornerModes.get(i);
-        if (cur === 'w-only') { disabledCorners.add(i); cornerModes.delete(i); }
-        else cornerModes.set(i, 'h-only');
-      }
-    } else if (o.axis === 'width') {
-      // car.h locked → disable edges 0,2; restrict corners to w-only
-      disabledEdges.add(0); disabledEdges.add(2);
-      for (let i = 0; i < 4; i++) {
-        if (disabledCorners.has(i)) continue;
-        const cur = cornerModes.get(i);
-        if (cur === 'h-only') { disabledCorners.add(i); cornerModes.delete(i); }
-        else cornerModes.set(i, 'w-only');
-      }
+  // Apply size-mark locks on top
+  if (state.lengthLocked) {
+    disabledEdges.add(1); disabledEdges.add(3);
+    for (let i = 0; i < 4; i++) {
+      if (disabledCorners.has(i)) continue;
+      const cur = cornerModes.get(i);
+      if (cur === 'w-only') { disabledCorners.add(i); cornerModes.delete(i); }
+      else cornerModes.set(i, 'h-only');
     }
   }
-
-  // null-mode (both-restricted) → fully disable
-  for (const [idx, mode] of cornerModes) {
-    if (mode === null) { disabledCorners.add(idx); cornerModes.delete(idx); }
+  if (state.widthLocked) {
+    disabledEdges.add(0); disabledEdges.add(2);
+    for (let i = 0; i < 4; i++) {
+      if (disabledCorners.has(i)) continue;
+      const cur = cornerModes.get(i);
+      if (cur === 'h-only') { disabledCorners.add(i); cornerModes.delete(i); }
+      else cornerModes.set(i, 'w-only');
+    }
   }
 
   return { disabledCorners, disabledEdges, cornerModes, disabledRotate };
