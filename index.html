@@ -1271,6 +1271,9 @@ let _constraintMode = false;
 let _lockDragInfo = null;   // { fixedPt:{x,y}, localX, localY, origRot, startAngle }
 let _resizeCornerMode = null; // null | 'w-only' | 'h-only'
 let _dragLockSnaps = null;    // [{ snap, idx }] captured at drag start, verified at drag end
+let _tiedCarsOrig = null;     // [{idx,x,y,rotation}] cars rigidly tied to a moving/rotating refline
+let _refRotPivot = null;      // {x,y} refpoint center for refline rotation
+let _refRotStartAngle = null; // initial angle (refpoint→endpoint) for rotation delta
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -2973,6 +2976,50 @@ function _buildCornerLocks(car) {
     determinedCount,
     isMoto,
   };
+}
+
+// Cars rigidly tied to a refline via a locked PM or pos-seg-mark. Returned entries
+// capture pre-drag pos+rotation so the refline-drag handlers can transform the group.
+function _captureTiedCars(rl) {
+  if (!rl) return [];
+  const ids = new Set();
+  for (const o of objects) {
+    if ((o.type === 'position-mark' || o.type === 'pos-seg-mark')
+        && o.reflineId === rl.id && o.constraintLocked) ids.add(o.carId);
+  }
+  const out = [];
+  objects.forEach((o, i) => {
+    if (o && o.id && ids.has(o.id) && (CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type))) {
+      out.push({ idx: i, x: o.x, y: o.y, rotation: o.rotation });
+    }
+  });
+  return out;
+}
+
+// Translate tied cars (refpoint move).
+function _applyTiedTranslation(tied, dx, dy) {
+  if (!tied) return;
+  for (const t of tied) {
+    const car = objects[t.idx];
+    if (car) { car.x = t.x + dx; car.y = t.y + dy; }
+  }
+}
+
+// Rotate tied cars around (px, py) by dAngle radians.
+function _applyTiedRotation(tied, px, py, dAngle) {
+  if (!tied) return;
+  const cosA = Math.cos(dAngle), sinA = Math.sin(dAngle);
+  for (const t of tied) {
+    const car = objects[t.idx];
+    if (!car) continue;
+    const ccx = t.x + car.w/2, ccy = t.y + car.h/2;
+    const ddx = ccx - px, ddy = ccy - py;
+    const newCx = px + ddx*cosA - ddy*sinA;
+    const newCy = py + ddx*sinA + ddy*cosA;
+    car.x = newCx - car.w/2;
+    car.y = newCy - car.h/2;
+    car.rotation = t.rotation + dAngle;
+  }
 }
 
 // Snapshot all hard locks (X from pos-seg-mark, Y from PM) so a tentative edit can be
@@ -5190,11 +5237,17 @@ function onDown(e) {
       selectObjOrig = selectedObjs.map(i => ({ ...objects[i] }));
       // Capture linked refline if dragging a single refpoint
       linkedReflineOrig = null;
+      _tiedCarsOrig = null;
+      _refRotPivot = null;
+      _refRotStartAngle = null;
       if (hit.type === 'move' && selectedObjs.length === 1) {
         const rp = objects[selectedObjs[0]];
         if (rp?.type === 'refpoint' && rp.id) {
           const j = objects.findIndex(o => o.type === 'refline' && o.refpointId === rp.id);
-          if (j >= 0) linkedReflineOrig = { idx:j, x1:objects[j].x1, y1:objects[j].y1, x2:objects[j].x2, y2:objects[j].y2 };
+          if (j >= 0) {
+            linkedReflineOrig = { idx:j, x1:objects[j].x1, y1:objects[j].y1, x2:objects[j].x2, y2:objects[j].y2 };
+            _tiedCarsOrig = _captureTiedCars(objects[j]);
+          }
         }
       }
       if (selectedObjs.length === 1) {
@@ -5266,10 +5319,18 @@ function onDown(e) {
             rotPrevAngle = Math.atan2(pt.y - cy, pt.x - cx);
           }
           if (orig.type !== 'marking-turn' && orig.type !== 'marking-chanl' && orig.type !== 'dimline') showRotLabel(orig);
-        } else if (hit.type === 'refline-p2') {
+        } else if (hit.type === 'refline-p2' || hit.type === 'refline-p1') {
           selectState = hit.type;
-        } else if (hit.type === 'refline-p1') {
-          selectState = hit.type;
+          // Capture tied cars + rotation pivot for group rotation
+          const rl = orig;
+          const rp = objects.find(o => o.type === 'refpoint' && o.id === rl.refpointId);
+          if (rp) {
+            const px = rp.x + rp.w/2, py = rp.y + rp.h/2;
+            _refRotPivot = { x: px, y: py };
+            const ep = (hit.type === 'refline-p2') ? { x: rl.x2, y: rl.y2 } : { x: rl.x1, y: rl.y1 };
+            _refRotStartAngle = Math.atan2(ep.y - py, ep.x - px);
+            _tiedCarsOrig = _captureTiedCars(rl);
+          }
         } else if (hit.type === 'reflabel-orbit') {
           selectState = 'reflabel-orbit';
         } else if (hit.type === 'refline-select') {
@@ -5537,16 +5598,26 @@ function onMove(e) {
       const rp = objects.find(o => o.type === 'refpoint' && o.id === obj.refpointId);
       if (rp) {
         const cx = rp.x + rp.w / 2, cy = rp.y + rp.h / 2;
-        const dx2 = obj.x2 - cx, dy2 = obj.y2 - cy;
-        const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-        if (len2 > 0.5) {
-          const nx = dx2 / len2, ny = dy2 / len2;
-          // Project (mouse - center) onto opposite direction
-          const proj = -((pt.x - cx) * nx + (pt.y - cy) * ny);
-          obj.len1 = Math.max(0, proj);
+        // P1 drag: mouse becomes new P1 → refline rotates around refpoint, P2 mirrors
+        const dx1 = pt.x - cx, dy1 = pt.y - cy;
+        const len1 = Math.sqrt(dx1*dx1 + dy1*dy1);
+        if (len1 > 0.5) {
+          const dx2_old = obj.x2 - cx, dy2_old = obj.y2 - cy;
+          const len2 = Math.sqrt(dx2_old*dx2_old + dy2_old*dy2_old) || 1;
+          const nxP1 = dx1/len1, nyP1 = dy1/len1;
+          obj.x2 = cx - nxP1 * len2;
+          obj.y2 = cy - nyP1 * len2;
+          obj.len1 = len1;
           computeReflineP1(obj);
           syncReflineBBox(obj);
         }
+      }
+      // Rotate tied cars around refpoint by angle delta of P1 endpoint
+      if (_refRotPivot && _refRotStartAngle != null && _tiedCarsOrig) {
+        let dA = Math.atan2(pt.y - _refRotPivot.y, pt.x - _refRotPivot.x) - _refRotStartAngle;
+        while (dA >  Math.PI) dA -= 2*Math.PI;
+        while (dA < -Math.PI) dA += 2*Math.PI;
+        _applyTiedRotation(_tiedCarsOrig, _refRotPivot.x, _refRotPivot.y, dA);
       }
       composite(); return;
     } else if (selectState === 'refline-p2') {
@@ -5554,6 +5625,13 @@ function onMove(e) {
       obj.x2 = pt.x; obj.y2 = pt.y;
       computeReflineP1(obj); // direction changed → recompute p1 position
       syncReflineBBox(obj);
+      // Rotate tied cars around refpoint by angle delta of P2 endpoint
+      if (_refRotPivot && _refRotStartAngle != null && _tiedCarsOrig) {
+        let dA = Math.atan2(pt.y - _refRotPivot.y, pt.x - _refRotPivot.x) - _refRotStartAngle;
+        while (dA >  Math.PI) dA -= 2*Math.PI;
+        while (dA < -Math.PI) dA += 2*Math.PI;
+        _applyTiedRotation(_tiedCarsOrig, _refRotPivot.x, _refRotPivot.y, dA);
+      }
       composite(); return;
     }
 
@@ -5582,6 +5660,8 @@ function onMove(e) {
         computeReflineP1(rl);
         syncReflineBBox(rl);
       }
+      // Drag tied cars along by same translation (preserves PM/pos-seg locks rigidly)
+      _applyTiedTranslation(_tiedCarsOrig, dx, dy);
       _computeGuides();
     } else if (selectState === 'pos-seg-move' && _posSegDragInfo) {
       const dPerp = dx * _posSegDragInfo.px + dy * _posSegDragInfo.py;
@@ -6000,6 +6080,7 @@ function onUp(e) {
     _lockDragInfo = null; _resizeCornerMode = null;
     _guideLines = [];
     linkedReflineOrig = null;
+    _tiedCarsOrig = null; _refRotPivot = null; _refRotStartAngle = null;
     rotLabel.classList.remove('rotating'); // restore interactivity after drag
     if (rotLabelObjIdx >= 0 && !selectedObjs.includes(rotLabelObjIdx)) {
       hideRotLabel();
