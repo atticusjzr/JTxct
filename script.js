@@ -3178,11 +3178,11 @@ function propSetCount(v) {
 }
 function propSetConstraintLocked(v) {
   const o = _propObj(); if (!o) return;
-  o.constraintLocked = v; markDirty();
+  o.constraintLocked = v; markDirty(); composite();
 }
 function propSetConstraintIndependent(v) {
   const o = _propObj(); if (!o) return;
-  o.constraintIndependent = v; markDirty();
+  o.constraintIndependent = v; markDirty(); composite();
 }
 
 // ── Resize edge (单边拉伸) ────────────────────────────────
