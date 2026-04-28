@@ -856,6 +856,8 @@ function hitHandle(pt, obj) {
     const hr2 = (5/zoom)**2;
     const cs = getCorners(obj);
     for (let i = 0; i < 4; i++) { if (dist2(pt, cs[i]) <= hr2) return { type:'corner', idx:i }; }
+    const ms = getMidpoints(obj);
+    for (let i = 0; i < 4; i++) { if (dist2(pt, ms[i]) <= hr2) return { type:'edge', idx:i }; }
     if (ptInObj(pt, obj)) return { type:'move' };
     return null;
   }
@@ -936,13 +938,17 @@ function drawSelHandles(ctx, obj) {
   }
   if (obj.type === 'scalebar') {
     const corners = getCorners(obj);
-    const hr = 5 / zoom, lw = 1.5 / zoom;
+    const hr = 5 / zoom, hs = 4 / zoom, lw = 1.5 / zoom;
     ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw; ctx.setLineDash([5/zoom, 3/zoom]);
     ctx.beginPath(); corners.forEach((c,i) => i===0?ctx.moveTo(c.x,c.y):ctx.lineTo(c.x,c.y)); ctx.closePath(); ctx.stroke();
     ctx.setLineDash([]);
     corners.forEach(c => {
       ctx.fillStyle = '#fff'; ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw;
       ctx.beginPath(); ctx.arc(c.x, c.y, hr, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    });
+    getMidpoints(obj).forEach(m => {
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.rect(m.x - hs, m.y - hs, hs*2, hs*2); ctx.fill(); ctx.stroke();
     });
     ctx.restore(); return;
   }
@@ -3777,7 +3783,7 @@ function resizeCorner(obj, ci, mx, my, shiftKey) {
 
   let nw = Math.abs(lx), nh = Math.abs(ly);
 
-  if (shiftKey || obj.type === 'scalebar') {
+  if (shiftKey) {
     const aspect = orig.w / orig.h;
     if (nw / nh > aspect) nh = nw / aspect; else nw = nh * aspect;
   }
