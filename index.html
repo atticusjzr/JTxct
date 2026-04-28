@@ -7749,10 +7749,8 @@ function _applyConstraint(obj, val) {
     const car = objects.find(o => o.id === obj.carId);
     const ep = _posSegFeet(obj);
     if (!car || !ep || car.constraintLocked) return;
-    const otherLocked = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
-    if (otherLocked.length > 0) {
-      _showLockBlockedModal(otherLocked); return;
-    }
+    // rp pos-seg edit translates car along refline → preserves all Y, so PM (Y) locks unaffected.
+    // Only OTHER locked pos-seg-marks (X locks) get violated by this translation.
     const lockedSegs = objects.filter(o => o.type === 'pos-seg-mark' && o !== obj && o.carId === car.id && o.constraintLocked);
     if (lockedSegs.length > 0) { _showLockBlockedModal(lockedSegs); return; }
     const { a, b } = ep;
