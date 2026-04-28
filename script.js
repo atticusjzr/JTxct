@@ -1794,34 +1794,37 @@ function _buildCornerLocks(car) {
   };
 }
 
-// Snapshot the X coords of every corner that is hard-X-locked (pos-seg-mark lock).
-// Returned: { map: Map<key, X>, carState: {x,y,w,h,rotation} } — caller restores carState
-// if a tentative edit violates the snapshot.
-function _snapshotHardXLocks(car) {
+// Snapshot all hard locks (X from pos-seg-mark, Y from PM) so a tentative edit can be
+// rolled back if it breaks any of them.
+function _snapshotHardLocks(car) {
   const state = _buildCornerLocks(car);
-  const map = new Map();
+  const xMap = new Map(), yMap = new Map();
   if (state) {
     for (const p of state.points) {
-      if (p.xLocked) map.set(p.key, p.X);
+      if (p.xLocked) xMap.set(p.key, p.X);
+      if (p.yLocked) yMap.set(p.key, p.Y);
     }
   }
   return {
-    map,
+    xMap, yMap,
     carState: { x: car.x, y: car.y, w: car.w, h: car.h, rotation: car.rotation },
   };
 }
 
-// True if every hard-X-locked corner still projects to its snapshotted X (within tolerance).
-function _hardXLocksOK(car, snap) {
-  if (!snap || snap.map.size === 0) return true;
+function _hardLocksOK(car, snap) {
+  if (!snap || (snap.xMap.size === 0 && snap.yMap.size === 0)) return true;
   const state = _buildCornerLocks(car);
   if (!state) return true;
   for (const p of state.points) {
-    if (!snap.map.has(p.key)) continue;
-    if (Math.abs(p.X - snap.map.get(p.key)) > 0.5) return false;
+    if (snap.xMap.has(p.key) && Math.abs(p.X - snap.xMap.get(p.key)) > 0.5) return false;
+    if (snap.yMap.has(p.key) && Math.abs(p.Y - snap.yMap.get(p.key)) > 0.5) return false;
   }
   return true;
 }
+
+// Back-compat aliases (kept while old call sites are migrated)
+const _snapshotHardXLocks = _snapshotHardLocks;
+const _hardXLocksOK = _hardLocksOK;
 
 function _restoreCar(car, snap) {
   Object.assign(car, snap.carState);
@@ -5465,13 +5468,19 @@ function ctxPaste() {
   pasteCount++;
   const off = 20 * pasteCount;
   const newIdxStart = objects.length;
+  // Skip refpoint/refline if one already exists (single-instance restriction)
+  const haveRefpoint = objects.some(o => o.type === 'refpoint');
+  const haveRefline  = objects.some(o => o.type === 'refline');
+  let dropped = 0;
   clipboard.forEach(obj => {
+    if ((obj.type === 'refpoint' && haveRefpoint) || (obj.type === 'refline' && haveRefline)) { dropped++; return; }
     const o = { ...obj, x: obj.x + off, y: obj.y + off, layerId: layers[activeIdx].id };
     if (o.type === 'marking-turn' || o.type === 'marking-chanl') { o.cx += off; o.cy += off; }
     if (o.type === 'refline')   { o.x1 += off; o.y1 += off; o.x2 += off; o.y2 += off; }
-    if (o.type === 'reflabel')  { o.radius += off * 0.5; } // nudge orbit slightly
+    if (o.type === 'reflabel')  { o.radius += off * 0.5; }
     objects.push(o);
   });
+  if (dropped > 0) showToast?.('已存在基準點/基準線，貼上時略過');
   selectedObjs = objects.slice(newIdxStart).map((_, i) => newIdxStart + i);
   syncSel();
   hideCtxMenu();
@@ -6607,10 +6616,13 @@ function _applyConstraint(obj, val) {
     if (obj.segIdx >= pmsT.length - 1) return;
     const A = pmsT[obj.segIdx], B = pmsT[obj.segIdx + 1];
 
+    // Block if 2+ PMs locked anywhere on the car: rotation/scale would break the 3rd-corner Y lock.
+    const allLockedPMs = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
+    if (allLockedPMs.length >= 2) { _showLockBlockedModal(allLockedPMs); return; }
+
     let locked, edited;
-    if (A.pm.constraintLocked && !B.pm.constraintLocked) { locked = A; edited = B; }
-    else if (B.pm.constraintLocked && !A.pm.constraintLocked) { locked = B; edited = A; }
-    else if (A.pm.constraintLocked && B.pm.constraintLocked) { _showLockBlockedModal([A.pm, B.pm]); return; }
+    if (A.pm.constraintLocked) { locked = A; edited = B; }
+    else if (B.pm.constraintLocked) { locked = B; edited = A; }
     else { locked = null; }
 
     const lockedSegs = objects.filter(o => o.type === 'pos-seg-mark' && o !== obj && o.carId === car.id && o.constraintLocked);
