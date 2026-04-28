@@ -6831,8 +6831,57 @@ function _applyConstraint(obj, val) {
     const rhs = sign * targetPx;  // X_B_target - X_A
     const u_cur = cosR*tx + sinR*ty;
     const v_cur = -sinR*tx + cosR*ty;
+    const nx = -ty, ny = tx;
     const safe = (v) => Number.isFinite(v) && !Number.isNaN(v);
     const snap = _snapshotHardXLocks(car);
+
+    // Priority 0: if a far-away PM is locked, solve simultaneously for car.w + car.h such
+    // that the seg target AND that PM's Y projection are both satisfied. Rotation+anchor fixed.
+    {
+      let lockedC = null;
+      for (const o of objects) {
+        if (o.type !== 'position-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+        if (typeof o.cornerIdx !== 'number') continue;
+        if (o === locked.pm) continue; // anchor's PM (already pinned)
+        const cornersC = isMoto ? getMotoWheelBottoms(car)
+          : (o.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car));
+        const cC = cornersC[o.cornerIdx];
+        if (cC) { lockedC = { pm: o, c: cC }; break; }
+      }
+      if (lockedC) {
+        const aAx = lxA / car.w, aAy = lyA / car.h;
+        const aBx = lxB / car.w, aBy = lyB / car.h;
+        const cxC = lockedC.c.x - (car.x + car.w/2);
+        const cyC = lockedC.c.y - (car.y + car.h/2);
+        const lxC = cxC*cosR + cyC*sinR;
+        const lyC = -cxC*sinR + cyC*cosR;
+        const aCx = lxC / car.w, aCy = lyC / car.h;
+        const dBx = aBx - aAx, dBy = aBy - aAy;
+        const dCx = aCx - aAx, dCy = aCy - aAy;
+        const Y_A = (locked.c.x - rl.x1)*nx + (locked.c.y - rl.y1)*ny;
+        const Y_C = (lockedC.c.x - rl.x1)*nx + (lockedC.c.y - rl.y1)*ny;
+        // Eq1: w*dBx*u + h*dBy*v = rhs
+        // Eq2 (Y_C preserved): w*(-dCx*v) + h*(dCy*u) = Y_C - Y_A
+        const m11 = dBx*u_cur, m12 = dBy*v_cur;
+        const m21 = -dCx*v_cur, m22 = dCy*u_cur;
+        const det = m11*m22 - m12*m21;
+        if (Math.abs(det) > 1e-6) {
+          const r1 = rhs, r2 = Y_C - Y_A;
+          const w_new = (m22*r1 - m12*r2) / det;
+          const h_new = (-m21*r1 + m11*r2) / det;
+          if (safe(w_new) && safe(h_new)
+              && w_new > car.w * 0.2 && w_new < car.w * 5
+              && h_new > car.h * 0.2 && h_new < car.h * 5) {
+            car.w = w_new; car.h = h_new;
+            const lxA_new = aAx * w_new, lyA_new = aAy * h_new;
+            car.x = locked.c.x - (lxA_new*cosR - lyA_new*sinR) - car.w/2;
+            car.y = locked.c.y - (lxA_new*sinR + lyA_new*cosR) - car.h/2;
+            if (_hardLocksOK(car, snap)) return;
+            _restoreCar(car, snap);
+          }
+        }
+      }
+    }
 
     // Priority 1: rotation around locked anchor (user spec: rotation > deform)
     if (Math.abs(rhs) <= dl_mag * 1.001) {
