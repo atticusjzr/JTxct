@@ -3047,11 +3047,21 @@ function _solveLinear(A, b, n) {
 function _refreshConstraint(con, car, rl, axes) {
   const { tx, ty, nx, ny } = axes;
   if (con.type === 'X' || con.type === 'Y') {
-    const a = _alphaForCorner(car, con.mode, con.cornerIdx);
-    if (!a) return false;
-    con.alphaX = a.alphaX; con.alphaY = a.alphaY;
-    if (con.type === 'X') con.current = (a.worldX - rl.x1)*tx + (a.worldY - rl.y1)*ty;
-    else                  con.current = (a.worldX - rl.x1)*nx + (a.worldY - rl.y1)*ny;
+    if (con.mode === 'bbox') {
+      // bbox corners / edge midpoints: αs are constants (±0.5 / 0), don't refresh
+      const cx = car.x + car.w/2, cy = car.y + car.h/2;
+      const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+      const wx = cx + con.alphaX*car.w*cosR - con.alphaY*car.h*sinR;
+      const wy = cy + con.alphaX*car.w*sinR + con.alphaY*car.h*cosR;
+      if (con.type === 'X') con.current = (wx - rl.x1)*tx + (wy - rl.y1)*ty;
+      else                  con.current = (wx - rl.x1)*nx + (wy - rl.y1)*ny;
+    } else {
+      const a = _alphaForCorner(car, con.mode, con.cornerIdx);
+      if (!a) return false;
+      con.alphaX = a.alphaX; con.alphaY = a.alphaY;
+      if (con.type === 'X') con.current = (a.worldX - rl.x1)*tx + (a.worldY - rl.y1)*ty;
+      else                  con.current = (a.worldX - rl.x1)*nx + (a.worldY - rl.y1)*ny;
+    }
   } else if (con.type === 'X_DIFF') {
     const aB = _alphaForCorner(car, con.mode, con.cornerIdx);
     const aA = _alphaForCorner(car, con.mode2, con.cornerIdx2);
@@ -3223,6 +3233,72 @@ function _runConstraintEdit(car, rl, locks, editCons, maxIter = 4, linTol = 0.5)
 }
 
 // Build edit constraints for each editable type
+// Build edit constraints for a corner-resize drag: target corner world position
+// (mx,my). Adds 'H' or 'W' fixator for w-only / h-only restricted modes.
+function _editConsForCornerDrag(car, cornerIdx, mx, my, mode) {
+  const rl = _getCarRefline(car);
+  if (!rl) return null;
+  computeReflineP1(rl);
+  const dx = rl.x2 - rl.x1, dy = rl.y2 - rl.y1;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 1) return null;
+  const tx = dx/len, ty = dy/len, nx = -ty, ny = tx;
+  const ax = (cornerIdx === 1 || cornerIdx === 2) ? 0.5 : -0.5;
+  const ay = (cornerIdx === 2 || cornerIdx === 3) ? 0.5 : -0.5;
+  const tgtX = (mx - rl.x1)*tx + (my - rl.y1)*ty;
+  const tgtY = (mx - rl.x1)*nx + (my - rl.y1)*ny;
+  const cx = car.x + car.w/2, cy = car.y + car.h/2;
+  const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+  const wx = cx + ax*car.w*cosR - ay*car.h*sinR;
+  const wy = cy + ax*car.w*sinR + ay*car.h*cosR;
+  const out = [
+    { type: 'X', mode: 'bbox', cornerIdx, alphaX: ax, alphaY: ay,
+      current: (wx - rl.x1)*tx + (wy - rl.y1)*ty, target: tgtX },
+    { type: 'Y', mode: 'bbox', cornerIdx, alphaX: ax, alphaY: ay,
+      current: (wx - rl.x1)*nx + (wy - rl.y1)*ny, target: tgtY },
+  ];
+  if (mode === 'w-only') out.push({ type: 'H', current: car.h, target: car.h });
+  if (mode === 'h-only') out.push({ type: 'W', current: car.w, target: car.w });
+  return out;
+}
+
+// Build edit constraints for an edge-resize drag: target W or H derived from
+// mouse projected onto the car's local axis. Pin the OPPOSITE edge midpoint to
+// preserve user expectation that the un-dragged side stays put.
+function _editConsForEdgeDrag(car, edgeIdx, mx, my) {
+  const rl = _getCarRefline(car);
+  if (!rl) return null;
+  computeReflineP1(rl);
+  const dx = rl.x2 - rl.x1, dy = rl.y2 - rl.y1;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 1) return null;
+  const tx = dx/len, ty = dy/len, nx = -ty, ny = tx;
+  const cx = car.x + car.w/2, cy = car.y + car.h/2;
+  const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
+  // Mouse in local frame
+  const dvx = mx - cx, dvy = my - cy;
+  const mlx = dvx*cosR + dvy*sinR;
+  const mly = -dvx*sinR + dvy*cosR;
+  let dim;
+  if (edgeIdx === 0 || edgeIdx === 2) dim = { type: 'H', target: Math.max(20, 2*Math.abs(mly)), current: car.h };
+  else                                 dim = { type: 'W', target: Math.max(20, 2*Math.abs(mlx)), current: car.w };
+  // Opposite edge midpoint pinning
+  const opp = (edgeIdx + 2) % 4;
+  const oax = (opp === 1) ? 0.5 : (opp === 3 ? -0.5 : 0);
+  const oay = (opp === 2) ? 0.5 : (opp === 0 ? -0.5 : 0);
+  const owx = cx + oax*car.w*cosR - oay*car.h*sinR;
+  const owy = cy + oax*car.w*sinR + oay*car.h*cosR;
+  return [
+    dim,
+    { type: 'X', mode: 'bbox', cornerIdx: -1, alphaX: oax, alphaY: oay,
+      current: (owx - rl.x1)*tx + (owy - rl.y1)*ty,
+      target:  (owx - rl.x1)*tx + (owy - rl.y1)*ty },
+    { type: 'Y', mode: 'bbox', cornerIdx: -1, alphaX: oax, alphaY: oay,
+      current: (owx - rl.x1)*nx + (owy - rl.y1)*ny,
+      target:  (owx - rl.x1)*nx + (owy - rl.y1)*ny },
+  ];
+}
+
 // Drag-time wrapper: if the car has any positional locks, route the drag intent
 // (edit constraints) through the unified solver so other DOFs auto-adjust.
 // Returns true if solver applied successfully (caller skips direct-set);
@@ -6058,32 +6134,37 @@ function onMove(e) {
       const obj = objects[selectedObjs[0]];
       const _boxMarking = new Set(['marking-grid','marking-moto-zone','marking-parking',
         'marking-rect','marking-arrow','marking-arrow-turn','marking-arrow-straight-turn','marking-arrow-three-way','marking-sepisle','marking-text']);
-      if (obj.type === 'marking-sepisle' || _boxMarking.has(obj.type)) {
-        resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
-      } else if (obj.type.startsWith('marking-')) {
-        resizeMarkingLength(obj, selectCorner === 1 || selectCorner === 2, pt.x, pt.y, true);
-      } else {
-        resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
+      // Vehicles with locks: route through solver
+      let solved = false;
+      if (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) {
+        const editCons = _editConsForCornerDrag(obj, selectCorner, pt.x, pt.y, _resizeCornerMode);
+        if (editCons) solved = _solvedDragEdit(obj, editCons);
       }
-      // Enforce dimension restriction for restricted corner modes
-      const orig0r = selectObjOrig[0];
-      if (_resizeCornerMode === 'w-only') obj.h = orig0r.h;
-      else if (_resizeCornerMode === 'h-only') obj.w = orig0r.w;
-      // Re-anchor fixed point (locked body corner or size-mark diagonal anchor)
-      if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
-        const ld = _lockDragInfo, orig0 = orig0r;
-        let lxS, lyS;
-        if (ld.isMotoWheel) {
-          // Moto wheel ly is non-linear in h; recompute from new dimensions
-          const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
-          lxS = r.lx; lyS = r.ly;
+      if (!solved) {
+        if (obj.type === 'marking-sepisle' || _boxMarking.has(obj.type)) {
+          resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
+        } else if (obj.type.startsWith('marking-')) {
+          resizeMarkingLength(obj, selectCorner === 1 || selectCorner === 2, pt.x, pt.y, true);
         } else {
-          lxS = ld.localX * obj.w / orig0.w;
-          lyS = ld.localY * obj.h / orig0.h;
+          resizeCorner(obj, selectCorner, pt.x, pt.y, e.shiftKey);
         }
-        const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
-        obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
-        obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
+        const orig0r = selectObjOrig[0];
+        if (_resizeCornerMode === 'w-only') obj.h = orig0r.h;
+        else if (_resizeCornerMode === 'h-only') obj.w = orig0r.w;
+        if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
+          const ld = _lockDragInfo, orig0 = orig0r;
+          let lxS, lyS;
+          if (ld.isMotoWheel) {
+            const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
+            lxS = r.lx; lyS = r.ly;
+          } else {
+            lxS = ld.localX * obj.w / orig0.w;
+            lyS = ld.localY * obj.h / orig0.h;
+          }
+          const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
+          obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
+          obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
+        }
       }
       _computeResizeGuides();
     } else if (selectState === 'edge') {
@@ -6105,22 +6186,29 @@ function onMove(e) {
           resizeMarkingLength(obj, selectCorner === 1, pt.x, pt.y);
         }
       } else {
-        resizeEdge(obj, selectCorner, pt.x, pt.y);
-      }
-      // Re-anchor to locked PM endpoint (mirror of the corner-drag post-correction)
-      if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
-        const ld = _lockDragInfo, orig0 = selectObjOrig[0];
-        let lxS, lyS;
-        if (ld.isMotoWheel) {
-          const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
-          lxS = r.lx; lyS = r.ly;
-        } else {
-          lxS = ld.localX * obj.w / orig0.w;
-          lyS = ld.localY * obj.h / orig0.h;
+        // Vehicles with locks: try solver first
+        let solved = false;
+        if (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type)) {
+          const editCons = _editConsForEdgeDrag(obj, selectCorner, pt.x, pt.y);
+          if (editCons) solved = _solvedDragEdit(obj, editCons);
         }
-        const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
-        obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
-        obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
+        if (!solved) {
+          resizeEdge(obj, selectCorner, pt.x, pt.y);
+          if (_lockDragInfo && (CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type))) {
+            const ld = _lockDragInfo, orig0 = selectObjOrig[0];
+            let lxS, lyS;
+            if (ld.isMotoWheel) {
+              const r = _recomputeLockedLocal(ld, obj.w, obj.h, obj.type, obj.variant);
+              lxS = r.lx; lyS = r.ly;
+            } else {
+              lxS = ld.localX * obj.w / orig0.w;
+              lyS = ld.localY * obj.h / orig0.h;
+            }
+            const cosR = Math.cos(obj.rotation), sinR = Math.sin(obj.rotation);
+            obj.x = ld.fixedPt.x - (lxS*cosR - lyS*sinR) - obj.w/2;
+            obj.y = ld.fixedPt.y - (lxS*sinR + lyS*cosR) - obj.h/2;
+          }
+        }
       }
       _computeResizeGuides();
     } else if (selectState === 'move-locked-1' && _lockDragInfo) {
