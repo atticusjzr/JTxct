@@ -2125,6 +2125,29 @@ function _hasPosLock(car) {
     && o.carId === car.id && o.constraintLocked);
 }
 
+// Geometric pivot rotation: if EXACTLY one PM is locked and no pos-seg is locked,
+// rotate the car about the locked PM's corner (preserves its world position → Y lock
+// intact). Returns true if applied, false if the configuration disallows it.
+function _pivotRotateIfPossible(car, newRot) {
+  const lockedPMs = objects.filter(o =>
+    o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
+  const lockedSegs = objects.filter(o =>
+    o.type === 'pos-seg-mark' && o.carId === car.id && o.constraintLocked);
+  if (lockedPMs.length !== 1 || lockedSegs.length > 0) return false;
+  const lc = _getLockedCornerInfo(car)[0];
+  if (!lc) return false;
+  const delta = newRot - car.rotation;
+  const cosD = Math.cos(delta), sinD = Math.sin(delta);
+  const cx = car.x + car.w/2, cy = car.y + car.h/2;
+  const ddx = cx - lc.worldX, ddy = cy - lc.worldY;
+  const newCx = lc.worldX + ddx*cosD - ddy*sinD;
+  const newCy = lc.worldY + ddx*sinD + ddy*cosD;
+  car.x = newCx - car.w/2;
+  car.y = newCy - car.h/2;
+  car.rotation = newRot;
+  return true;
+}
+
 // Drag-time solver entry. Caller is responsible for checking _hasPosLock first.
 // Returns true on solver success, false on solver failure (state rolled back to
 // call-start). Either way, caller MUST NOT direct-set DOFs after this — direct
@@ -3404,8 +3427,9 @@ function propSetRotation(v) {
   const newRot = (parseFloat(v) || 0) * Math.PI / 180;
   const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
   if (isVehicle && _hasPosLock(o)) {
-    _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }]);
-    // success or failure: do not direct-set rotation (would break locks on failure)
+    if (!_pivotRotateIfPossible(o, newRot)) {
+      _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }]);
+    }
   } else {
     o.rotation = newRot;
   }
@@ -3416,7 +3440,9 @@ function propSetRotationLive(v) {
   const newRot = (parseFloat(v) || 0) * Math.PI / 180;
   const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
   if (isVehicle && _hasPosLock(o)) {
-    _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }]);
+    if (!_pivotRotateIfPossible(o, newRot)) {
+      _solvedDragEdit(o, [{ type: 'R', target: newRot, current: o.rotation }]);
+    }
   } else {
     o.rotation = newRot;
   }
@@ -4859,17 +4885,27 @@ function onMove(e) {
         if (!objects[idx]) return;
         const orig = selectObjOrig[i];
         const o = objects[idx];
-        const tgtX = orig.x + dx, tgtY = orig.y + dy;
         const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
         if (isVehicle && _hasPosLock(o)) {
-          const tgtCx = tgtX + orig.w/2, tgtCy = tgtY + orig.h/2;
-          const editCons = [
-            { type: 'CX', target: tgtCx, current: o.x + o.w/2 },
-            { type: 'CY', target: tgtCy, current: o.y + o.h/2 },
-          ];
-          _solvedDragEdit(o, editCons);
+          // Slide along refline: project drag delta onto refline tangent. Preserves
+          // every corner's Y (PM locks intact) AND every X-difference (pos-seg locks
+          // intact, since both endpoints translate by the same amount).
+          const rl = _getCarRefline(o);
+          let dxA = dx, dyA = dy;
+          if (rl) {
+            computeReflineP1(rl);
+            const rdx = rl.x2 - rl.x1, rdy = rl.y2 - rl.y1;
+            const rlen = Math.sqrt(rdx*rdx + rdy*rdy);
+            if (rlen >= 1) {
+              const tx = rdx/rlen, ty = rdy/rlen;
+              const proj = dx*tx + dy*ty;
+              dxA = proj * tx; dyA = proj * ty;
+            }
+          }
+          o.x = orig.x + dxA;
+          o.y = orig.y + dyA;
         } else {
-          o.x = tgtX; o.y = tgtY;
+          o.x = orig.x + dx; o.y = orig.y + dy;
         }
         if (o.type === 'marking-turn' || o.type === 'marking-chanl') {
           o.cx = orig.cx + dx;
@@ -5050,7 +5086,10 @@ function onMove(e) {
         if (e.shiftKey) newRot = Math.round(newRot / (Math.PI / 12)) * (Math.PI / 12);
         const isVehicle = CAR_TYPES.has(obj.type) || MOTO_TYPES.has(obj.type);
         if (isVehicle && _hasPosLock(obj)) {
-          _solvedDragEdit(obj, [{ type: 'R', target: newRot, current: obj.rotation }]);
+          if (!_pivotRotateIfPossible(obj, newRot)) {
+            // 2+ locks or pos-seg lock present: try solver
+            _solvedDragEdit(obj, [{ type: 'R', target: newRot, current: obj.rotation }]);
+          }
         } else {
           obj.rotation = newRot;
         }
