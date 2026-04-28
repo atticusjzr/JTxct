@@ -2857,6 +2857,123 @@ function _getLockedCornerInfo(car) {
   return res;
 }
 
+// Returns the refline this car is bound to (currently 1 refline allowed).
+// If multiple reflines exist (future), pick the nearest by car-center perpendicular distance.
+function _getCarRefline(car) {
+  if (!car) return null;
+  const reflines = objects.filter(o => o.type === 'refline');
+  if (reflines.length === 0) return null;
+  if (reflines.length === 1) { computeReflineP1(reflines[0]); return reflines[0]; }
+  const cx = car.x + car.w/2, cy = car.y + car.h/2;
+  let best = null, bestD = Infinity;
+  for (const rl of reflines) {
+    computeReflineP1(rl);
+    const dx = rl.x2 - rl.x1, dy = rl.y2 - rl.y1;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 1) continue;
+    const d = Math.abs((cx - rl.x1)*(-dy) + (cy - rl.y1)*dx) / len;
+    if (d < bestD) { bestD = d; best = rl; }
+  }
+  return best;
+}
+
+// Unified constraint collector for a car.
+// Returns:
+//   {
+//     rl: refline,
+//     tx, ty, nx, ny: unit tangent (X axis) and normal (Y axis) of refline,
+//     points: Array<{ key, mode, cornerIdx, worldX, worldY, X, Y, xLocked, yLocked, sources }>,
+//     lengthLocked, widthLocked: bool (size-mark locks),
+//     determinedCount: number of points with both X and Y locked (real or assumed)
+//   }
+// Does NOT include "assumption" locks — those are added per-edit by the caller.
+function _buildCornerLocks(car) {
+  if (!car) return null;
+  const rl = _getCarRefline(car);
+  if (!rl) return null;
+  const dx = rl.x2 - rl.x1, dy = rl.y2 - rl.y1;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 1) return null;
+  const tx = dx/len, ty = dy/len;
+  const nx = -ty, ny = tx;
+  const isMoto = MOTO_TYPES.has(car.type);
+
+  const points = new Map();
+  const getPoint = (mode, cornerIdx, world) => {
+    const key = `${mode}-${cornerIdx}`;
+    if (!points.has(key)) {
+      const X = (world.x - rl.x1) * tx + (world.y - rl.y1) * ty;
+      const Y = (world.x - rl.x1) * nx + (world.y - rl.y1) * ny;
+      points.set(key, {
+        key, mode, cornerIdx,
+        worldX: world.x, worldY: world.y,
+        X, Y,
+        xLocked: false, yLocked: false,
+        sources: [],
+      });
+    }
+    return points.get(key);
+  };
+
+  // PM locks → Y of that corner is hard-locked
+  for (const o of objects) {
+    if (o.type !== 'position-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+    if (typeof o.cornerIdx !== 'number') continue;
+    const corners = isMoto ? getMotoWheelBottoms(car)
+      : (o.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car));
+    const c = corners[o.cornerIdx];
+    if (!c) continue;
+    const mode = isMoto ? 'wheel' : (o.mode || 'body');
+    const p = getPoint(mode, o.cornerIdx, c);
+    p.yLocked = true;
+    p.sources.push(o);
+  }
+
+  // Pos-seg-mark locks → X of both endpoint corners is hard-locked
+  for (const o of objects) {
+    if (o.type !== 'pos-seg-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+    // Find the two corners this segment connects (skip 'rp' refpoint segments — refpoint X is fixed by definition)
+    if (o.segIdx === 'rp' || typeof o.segIdx !== 'number') continue;
+    // Locate the PMs whose feet are at index segIdx and segIdx+1 along sorted-by-t order
+    const pms = objects.filter(p => p.type === 'position-mark' && p.carId === car.id && typeof p.cornerIdx === 'number');
+    if (pms.length < 2) continue;
+    const pmsWithT = pms.map(p => {
+      const corners = isMoto ? getMotoWheelBottoms(car)
+        : (p.mode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car));
+      const c = corners[p.cornerIdx];
+      if (!c) return null;
+      const t = (c.x - rl.x1) * tx + (c.y - rl.y1) * ty;
+      return { pm: p, c, t };
+    }).filter(Boolean).sort((a, b) => a.t - b.t);
+    if (o.segIdx >= pmsWithT.length - 1) continue;
+    const aPm = pmsWithT[o.segIdx], bPm = pmsWithT[o.segIdx + 1];
+    for (const e of [aPm, bPm]) {
+      const mode = isMoto ? 'wheel' : (e.pm.mode || 'body');
+      const p = getPoint(mode, e.pm.cornerIdx, e.c);
+      p.xLocked = true;
+      p.sources.push(o);
+    }
+  }
+
+  // Size-mark locks
+  let lengthLocked = false, widthLocked = false;
+  for (const o of objects) {
+    if (o.type !== 'size-mark' || o.carId !== car.id || !o.constraintLocked) continue;
+    if (o.axis === 'length') lengthLocked = true;
+    else if (o.axis === 'width') widthLocked = true;
+  }
+
+  const ptsArr = Array.from(points.values());
+  const determinedCount = ptsArr.filter(p => p.xLocked && p.yLocked).length;
+  return {
+    rl, tx, ty, nx, ny,
+    points: ptsArr,
+    lengthLocked, widthLocked,
+    determinedCount,
+    isMoto,
+  };
+}
+
 // Recompute the locked anchor's local position for the given car dimensions.
 // Needed because moto side-view wheel ly is non-linear in h (uses min(h*0.19, w*0.12)).
 function _recomputeLockedLocal(ld, w, h, type, variant) {
