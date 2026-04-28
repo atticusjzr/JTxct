@@ -1274,6 +1274,8 @@ let _dragLockSnaps = null;    // [{ snap, idx }] captured at drag start, verifie
 let _tiedCarsOrig = null;     // [{idx,x,y,rotation}] cars rigidly tied to a moving/rotating refline
 let _refRotPivot = null;      // {x,y} refpoint center for refline rotation
 let _refRotStartAngle = null; // initial angle (refpoint→endpoint) for rotation delta
+let _refRotLastAngle = null;  // last frame's angle, for incremental delta (continuous past ±π)
+let _refRotAccumulated = 0;   // accumulated rotation since drag start
 let _ctxMeasureIdx = -1;
 let _seoFocusedDefFS = 13;
 let _guideLines = [];      // [{axis:'x'|'y', val:number}] active snap guides during move
@@ -5240,6 +5242,8 @@ function onDown(e) {
       _tiedCarsOrig = null;
       _refRotPivot = null;
       _refRotStartAngle = null;
+      _refRotLastAngle = null;
+      _refRotAccumulated = 0;
       if (hit.type === 'move' && selectedObjs.length === 1) {
         const rp = objects[selectedObjs[0]];
         if (rp?.type === 'refpoint' && rp.id) {
@@ -5329,7 +5333,14 @@ function onDown(e) {
             _refRotPivot = { x: px, y: py };
             const ep = (hit.type === 'refline-p2') ? { x: rl.x2, y: rl.y2 } : { x: rl.x1, y: rl.y1 };
             _refRotStartAngle = Math.atan2(ep.y - py, ep.x - px);
+            _refRotLastAngle = _refRotStartAngle;
+            _refRotAccumulated = 0;
             _tiedCarsOrig = _captureTiedCars(rl);
+            // Also include tied cars in lock-snap so drag-end verify catches any breakage
+            for (const t of _tiedCarsOrig) {
+              const car = objects[t.idx];
+              if (car) _dragLockSnaps.push({ idx: t.idx, snap: _snapshotHardLocks(car) });
+            }
           }
         } else if (hit.type === 'reflabel-orbit') {
           selectState = 'reflabel-orbit';
@@ -5612,25 +5623,30 @@ function onMove(e) {
           syncReflineBBox(obj);
         }
       }
-      // Rotate tied cars around refpoint by angle delta of P1 endpoint
-      if (_refRotPivot && _refRotStartAngle != null && _tiedCarsOrig) {
-        let dA = Math.atan2(pt.y - _refRotPivot.y, pt.x - _refRotPivot.x) - _refRotStartAngle;
-        while (dA >  Math.PI) dA -= 2*Math.PI;
-        while (dA < -Math.PI) dA += 2*Math.PI;
-        _applyTiedRotation(_tiedCarsOrig, _refRotPivot.x, _refRotPivot.y, dA);
+      // Rotate tied cars around refpoint (accumulated incremental delta is continuous past ±π)
+      if (_refRotPivot && _refRotLastAngle != null && _tiedCarsOrig) {
+        const cur = Math.atan2(pt.y - _refRotPivot.y, pt.x - _refRotPivot.x);
+        let dInc = cur - _refRotLastAngle;
+        while (dInc >  Math.PI) dInc -= 2*Math.PI;
+        while (dInc < -Math.PI) dInc += 2*Math.PI;
+        _refRotAccumulated += dInc;
+        _refRotLastAngle = cur;
+        _applyTiedRotation(_tiedCarsOrig, _refRotPivot.x, _refRotPivot.y, _refRotAccumulated);
       }
       composite(); return;
     } else if (selectState === 'refline-p2') {
       const obj = objects[selectedObjs[0]];
       obj.x2 = pt.x; obj.y2 = pt.y;
-      computeReflineP1(obj); // direction changed → recompute p1 position
+      computeReflineP1(obj);
       syncReflineBBox(obj);
-      // Rotate tied cars around refpoint by angle delta of P2 endpoint
-      if (_refRotPivot && _refRotStartAngle != null && _tiedCarsOrig) {
-        let dA = Math.atan2(pt.y - _refRotPivot.y, pt.x - _refRotPivot.x) - _refRotStartAngle;
-        while (dA >  Math.PI) dA -= 2*Math.PI;
-        while (dA < -Math.PI) dA += 2*Math.PI;
-        _applyTiedRotation(_tiedCarsOrig, _refRotPivot.x, _refRotPivot.y, dA);
+      if (_refRotPivot && _refRotLastAngle != null && _tiedCarsOrig) {
+        const cur = Math.atan2(pt.y - _refRotPivot.y, pt.x - _refRotPivot.x);
+        let dInc = cur - _refRotLastAngle;
+        while (dInc >  Math.PI) dInc -= 2*Math.PI;
+        while (dInc < -Math.PI) dInc += 2*Math.PI;
+        _refRotAccumulated += dInc;
+        _refRotLastAngle = cur;
+        _applyTiedRotation(_tiedCarsOrig, _refRotPivot.x, _refRotPivot.y, _refRotAccumulated);
       }
       composite(); return;
     }
@@ -6065,6 +6081,13 @@ function onUp(e) {
           const orig = selectObjOrig?.[si];
           if (orig) Object.assign(objects[i], orig);
         });
+        // Also restore tied cars (refline drag carries them rigidly)
+        if (_tiedCarsOrig) {
+          for (const t of _tiedCarsOrig) {
+            const car = objects[t.idx];
+            if (car) { car.x = t.x; car.y = t.y; car.rotation = t.rotation; }
+          }
+        }
         showToast?.('已鎖定的線段不可被破壞，操作已還原');
       } else {
         const _changed = selectedObjs.some((i, si) => {
@@ -6081,6 +6104,7 @@ function onUp(e) {
     _guideLines = [];
     linkedReflineOrig = null;
     _tiedCarsOrig = null; _refRotPivot = null; _refRotStartAngle = null;
+    _refRotLastAngle = null; _refRotAccumulated = 0;
     rotLabel.classList.remove('rotating'); // restore interactivity after drag
     if (rotLabelObjIdx >= 0 && !selectedObjs.includes(rotLabelObjIdx)) {
       hideRotLabel();
