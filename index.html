@@ -1661,7 +1661,7 @@ function startDimlineEdit(objIdx) {
   inp.style.cssText = `position:absolute;left:${Math.round((p.x+CANVAS_MARGIN)*zoom-60)}px;top:${Math.round((p.y+CANVAS_MARGIN)*zoom-14)}px;width:120px;background:#fff;border:2px solid #e53935;border-radius:4px;padding:2px 6px;font-size:${fs}px;text-align:center;z-index:500;outline:none;box-sizing:border-box;`;
   const commit = () => {
     const v = inp.value.trim();
-    if (_constraintMode && v !== '' && !obj.constraintIndependent) {
+    if (_constraintMode && v !== '') {
       _applyConstraint(obj, v);
       obj.labelText = null;
     } else {
@@ -4127,7 +4127,6 @@ function updatePropsPanel() {
   if (_constraintMode && _CONSTRAINT_TYPES.has(t)) {
     rows.push(`<div class="prop-row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><label style="color:var(--accent,#5c6bc0);font-size:11px">約束編輯</label></div>`);
     rows.push(`<div class="prop-row"><label>鎖定</label><input type="checkbox" ${obj.constraintLocked?'checked':''} onchange="propSetConstraintLocked(this.checked)" title="鎖定後此線段不受其他線段的約束影響"></div>`);
-    rows.push(`<div class="prop-row"><label>獨立</label><input type="checkbox" ${obj.constraintIndependent?'checked':''} onchange="propSetConstraintIndependent(this.checked)" title="勾選後只有此線段的標記數字跟隨變化，不影響其他線段"></div>`);
   }
 
   body.innerHTML = rows.join('');
@@ -4461,11 +4460,6 @@ function propSetConstraintLocked(v) {
   const o = _propObj(); if (!o) return;
   o.constraintLocked = v; markDirty(); composite();
 }
-function propSetConstraintIndependent(v) {
-  const o = _propObj(); if (!o) return;
-  o.constraintIndependent = v; markDirty(); composite();
-}
-
 // ── Resize edge (单边拉伸) ────────────────────────────────
 function resizeEdge(obj, ei, mx, my) {
   const anchor = anchorWorld;
@@ -7855,7 +7849,7 @@ function commitMeasureEdit(objIdx, val) {
   const obj = objects[objIdx];
   if (!obj || !obj.measure) return;
   const v = val.trim();
-  if (_constraintMode && v !== '' && !obj.constraintIndependent) {
+  if (_constraintMode && v !== '') {
     _applyConstraint(obj, v);
     obj.measure.text = ''; // clear so label tracks geometry, not the typed value
   } else {
@@ -7984,22 +7978,22 @@ function _applyConstraint(obj, val) {
     if (obj.segIdx >= pmsT.length - 1) return;
     const A = pmsT[obj.segIdx], B = pmsT[obj.segIdx + 1];
 
-    // Block if 2+ PMs locked anywhere on the car: rotation/scale would break the 3rd-corner Y lock.
-    const allLockedPMs = objects.filter(o => o.type === 'position-mark' && o.carId === car.id && o.constraintLocked);
-    if (allLockedPMs.length >= 2) { _showLockBlockedModal(allLockedPMs); return; }
-
+    // Anchor = endpoint closer to refpoint (per spec). If one endpoint is a locked PM,
+    // it overrides — that point must stay anchored regardless.
+    const rp = objects.find(o => o.type === 'refpoint' && o.id === rl.refpointId);
     let locked, edited;
-    if (A.pm.constraintLocked) { locked = A; edited = B; }
+    if (A.pm.constraintLocked && B.pm.constraintLocked) { _showLockBlockedModal([A.pm, B.pm]); return; }
+    else if (A.pm.constraintLocked) { locked = A; edited = B; }
     else if (B.pm.constraintLocked) { locked = B; edited = A; }
-    else { locked = null; }
+    else if (rp) {
+      const tRp = (rp.x + rp.w/2 - rl.x1)*tx + (rp.y + rp.h/2 - rl.y1)*ty;
+      if (Math.abs(A.t - tRp) <= Math.abs(B.t - tRp)) { locked = A; edited = B; }
+      else                                              { locked = B; edited = A; }
+    }
+    else { locked = A; edited = B; } // fallback: first endpoint
 
     const lockedSegs = objects.filter(o => o.type === 'pos-seg-mark' && o !== obj && o.carId === car.id && o.constraintLocked);
     if (lockedSegs.length > 0) { _showLockBlockedModal(lockedSegs); return; }
-
-    if (!locked) {
-      // No PM locked: not implemented (would need a center-anchor strategy)
-      _showLockBlockedModal([]); return;
-    }
 
     const cx = car.x + car.w/2, cy = car.y + car.h/2;
     const cosR = Math.cos(car.rotation), sinR = Math.sin(car.rotation);
