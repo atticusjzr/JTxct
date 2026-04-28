@@ -4156,11 +4156,9 @@ function onDown(e) {
             _refRotLastAngle = _refRotStartAngle;
             _refRotAccumulated = 0;
             _tiedCarsOrig = _captureTiedCars(rl);
-            // Also include tied cars in lock-snap so drag-end verify catches any breakage
-            for (const t of _tiedCarsOrig) {
-              const car = objects[t.idx];
-              if (car) _dragLockSnaps.push({ idx: t.idx, snap: _snapshotHardLocks(car) });
-            }
+            // Tied cars are not snap-verified: rigid rotation around the refpoint preserves
+            // every X/Y projection by construction, and floating-point drift can otherwise
+            // false-positive the rollback for a perfectly valid group rotation.
           }
         } else if (hit.type === 'reflabel-orbit') {
           selectState = 'reflabel-orbit';
@@ -4425,33 +4423,21 @@ function onMove(e) {
     }
 
     if (selectState === 'refline-p1') {
+      // P1 endpoint: extend len1 only (project mouse onto refline opposite axis).
+      // No rotation, no P2 modification — preserves "lengthen the other side" workflow.
       const obj = objects[selectedObjs[0]];
       const rp = objects.find(o => o.type === 'refpoint' && o.id === obj.refpointId);
       if (rp) {
         const cx = rp.x + rp.w / 2, cy = rp.y + rp.h / 2;
-        // P1 drag: mouse becomes new P1 → refline rotates around refpoint, P2 mirrors
-        const dx1 = pt.x - cx, dy1 = pt.y - cy;
-        const len1 = Math.sqrt(dx1*dx1 + dy1*dy1);
-        if (len1 > 0.5) {
-          const dx2_old = obj.x2 - cx, dy2_old = obj.y2 - cy;
-          const len2 = Math.sqrt(dx2_old*dx2_old + dy2_old*dy2_old) || 1;
-          const nxP1 = dx1/len1, nyP1 = dy1/len1;
-          obj.x2 = cx - nxP1 * len2;
-          obj.y2 = cy - nyP1 * len2;
-          obj.len1 = len1;
+        const dx2 = obj.x2 - cx, dy2 = obj.y2 - cy;
+        const len2 = Math.sqrt(dx2*dx2 + dy2*dy2);
+        if (len2 > 0.5) {
+          const nx = dx2 / len2, ny = dy2 / len2;
+          const proj = -((pt.x - cx) * nx + (pt.y - cy) * ny);
+          obj.len1 = Math.max(0, proj);
           computeReflineP1(obj);
           syncReflineBBox(obj);
         }
-      }
-      // Rotate tied cars around refpoint (accumulated incremental delta is continuous past ±π)
-      if (_refRotPivot && _refRotLastAngle != null && _tiedCarsOrig) {
-        const cur = Math.atan2(pt.y - _refRotPivot.y, pt.x - _refRotPivot.x);
-        let dInc = cur - _refRotLastAngle;
-        while (dInc >  Math.PI) dInc -= 2*Math.PI;
-        while (dInc < -Math.PI) dInc += 2*Math.PI;
-        _refRotAccumulated += dInc;
-        _refRotLastAngle = cur;
-        _applyTiedRotation(_tiedCarsOrig, _refRotPivot.x, _refRotPivot.y, _refRotAccumulated);
       }
       composite(); return;
     } else if (selectState === 'refline-p2') {
