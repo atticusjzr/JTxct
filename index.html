@@ -7830,8 +7830,9 @@ function _applyConstraint(obj, val) {
       const usePick1 = (u1-u_cur)**2+(v1-v_cur)**2 <= (u2-u_cur)**2+(v2-v_cur)**2;
       const u_new = usePick1 ? u1 : u2, v_new = usePick1 ? v1 : v2;
       if (safe(u_new) && safe(v_new)) {
-        const cosR_new = u_new*tx - v_new*ty;
-        const sinR_new = u_new*ty + v_new*tx;
+        // Inverse for X-axis frame: substitute (tx,ty) for (nx,ny) in PM-Y formula
+        const cosR_new = tx*u_new + ty*v_new;
+        const sinR_new = ty*u_new - tx*v_new;
         const dRot = Math.abs(Math.atan2(sinR_new*cosR - cosR_new*sinR, cosR_new*cosR + sinR_new*sinR));
         if (dRot < Math.PI / 2) {
           car.rotation = Math.atan2(sinR_new, cosR_new);
@@ -7993,7 +7994,8 @@ function _applyPMWithOneLocked(obj, targetPx, car, lockedPM) {
     const usePick1 = (u1-u_cur)**2+(v1-v_cur)**2 <= (u2-u_cur)**2+(v2-v_cur)**2;
     const u_new = usePick1 ? u1 : u2, v_new = usePick1 ? v1 : v2;
     if (safe(u_new) && safe(v_new)) {
-      const cosR_new = nx*u_new - ny*v_new, sinR_new = ny*u_new + nx*v_new;
+      // Inverse of (U,V) = M^T·(cosR,sinR) where M^T = [[nx,ny],[ny,-nx]] is involutory.
+      const cosR_new = nx*u_new + ny*v_new, sinR_new = ny*u_new - nx*v_new;
       const dRot = Math.abs(Math.atan2(sinR_new*cosR - cosR_new*sinR, cosR_new*cosR + sinR_new*sinR));
       if (dRot < Math.PI / 2) {
         car.rotation = Math.atan2(sinR_new, cosR_new);
