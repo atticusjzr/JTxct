@@ -1,1 +1,15 @@
-screenshot_*.jpg
+# 截圖
+*.jpg
+*.jpeg
+*.png
+
+# 影片
+*.mov
+*.mp4
+
+# 測試存檔
+測試*.json
+测试*.json
+
+# 備份
+*.bak
