@@ -139,7 +139,7 @@ class Layer {
 }
 
 // Types that don't count as dimline obstacles
-const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline','position-mark','size-mark','pos-seg-mark','scalebar']);
+const _NON_OBSTACLE = new Set(['freetext','marking-text','compass','hydrant','refpoint','reflabel','dimline','position-mark','size-mark','pos-seg-mark','scalebar','carlabel']);
 function _isObstacle(obj) { return !_NON_OBSTACLE.has(obj.type) && !obj.specialRole; }
 
 // ── Composite ────────────────────────────────────────────
@@ -779,6 +779,8 @@ function drawObjOnCtx(ctx, obj) {
     drawImageObj(ctx, obj);
   } else if (obj.type === 'dimline') {
     drawDimline(ctx, obj);
+  } else if (obj.type === 'carlabel') {
+    drawCarlabel(ctx, obj);
   } else if (obj.type.startsWith('marking-')) {
     drawMarkingDblSolid(ctx, obj.x, obj.y, obj.w, obj.h, obj.color || '#f9c400');
   } else {
@@ -867,6 +869,10 @@ function hitHandle(pt, obj) {
     if (ptOnMarkingTurn(pt, obj)) return { type: 'move' };
     return null;
   }
+  if (obj.type === 'carlabel') {
+    if (ptOnCarlabel(pt, obj)) return { type: 'move' };
+    return null;
+  }
   if (obj.type === 'marking-chanl') {
     const th = hitChanlHandle(pt, obj);
     if (th) return th;
@@ -927,6 +933,19 @@ function drawSelHandles(ctx, obj) {
       ctx.beginPath(); ctx.moveTo(ep.a.x, ep.a.y); ctx.lineTo(ep.b.x, ep.b.y); ctx.stroke();
       ctx.setLineDash([]);
     }
+    ctx.restore(); return;
+  }
+  if (obj.type === 'carlabel') {
+    const m = _getCarlabelMetrics(obj);
+    if (!m) { ctx.restore(); return; }
+    const lw = 1.5/zoom;
+    ctx.strokeStyle = '#42a5f5'; ctx.lineWidth = lw; ctx.setLineDash([4/zoom,3/zoom]);
+    if (obj.labelType === 'letter') {
+      ctx.beginPath(); ctx.arc(m.cx, m.cy, m.r + 3/zoom, 0, Math.PI*2); ctx.stroke();
+    } else {
+      ctx.strokeRect(m.cx-m.hw-3/zoom, m.cy-m.hh-3/zoom, (m.hw+3/zoom)*2, (m.hh+3/zoom)*2);
+    }
+    ctx.setLineDash([]);
     ctx.restore(); return;
   }
   if (obj.type === 'reflabel') {
@@ -2846,6 +2865,59 @@ function ctxRemoveSizeMarks() {
   composite(); markDirty(); saveSnap('移除車長車寬');
 }
 
+// ── carlabel context menu functions ──────────────────────
+function ctxAddCarlabel(charOrFree) {
+  hideCtxMenu();
+  const selObj = selectedObjs.length===1 ? objects[selectedObjs[0]] : null;
+  if (!selObj || (!CAR_TYPES.has(selObj.type) && !MOTO_TYPES.has(selObj.type))) return;
+  if (!selObj.id) selObj.id = Math.random().toString(36).slice(2);
+  // Remove existing carlabel for this car
+  for (let i = objects.length-1; i>=0; i--) {
+    if (objects[i].type==='carlabel' && objects[i].carId===selObj.id) objects.splice(i,1);
+  }
+  if (charOrFree === 'free') {
+    openModal('自由命名', `<input type="text" id="cl-free-inp" style="width:100%" placeholder="輸入名稱">`, [
+      { text:'取消', cls:'btn', fn: closeModal },
+      { text:'確認', cls:'btn primary', fn: () => {
+        const txt = (document.getElementById('cl-free-inp')?.value || '').trim() || '?';
+        closeModal();
+        _doAddCarlabel(selObj, 'free', txt);
+      }}
+    ]);
+    setTimeout(() => { const i = document.getElementById('cl-free-inp'); i?.focus(); }, 40);
+  } else {
+    _doAddCarlabel(selObj, 'letter', charOrFree);
+  }
+}
+
+function _doAddCarlabel(car, labelType, text) {
+  const cl = {
+    type: 'carlabel', carId: car.id, labelType, text,
+    fontSize: 16, color: '#212121', bgColor: '#ffffff', noBg: false,
+    maxRadius: 120, fontFamily: 'sans-serif',
+    offsetX: 0, offsetY: -(car.h/2 + 30),
+    rotation: 0, x:0, y:0, w:0, h:0,
+    layerId: car.layerId || layers[activeIdx].id
+  };
+  _syncCarlabelBBox(cl);
+  objects.push(cl);
+  selectedObjs = [objects.length-1]; syncSel();
+  composite(); markDirty(); saveSnap('命名車輛');
+}
+
+function ctxRemoveCarlabel() {
+  hideCtxMenu();
+  const selObj = selectedObjs.length===1 ? objects[selectedObjs[0]] : null;
+  if (!selObj) return;
+  const carId = selObj.type==='carlabel' ? selObj.carId : selObj.id;
+  if (!carId) return;
+  let removed = false;
+  for (let i = objects.length-1; i>=0; i--) {
+    if (objects[i].type==='carlabel' && objects[i].carId===carId) { objects.splice(i,1); removed=true; }
+  }
+  if (removed) { selectedObjs=[]; syncSel(); composite(); markDirty(); saveSnap('移除車輛名稱'); }
+}
+
 // ── 群組工具函式 ──────────────────────────────────────────
 function getGroupBBox() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -3161,6 +3233,7 @@ const OBJ_TYPE_NAMES = {
   'freetext': '文字', 'image': '圖片',
   'dimline': '尺寸線',
   'scalebar': '圖示比例尺',
+  'carlabel': '車輛名稱標籤',
 };
 
 function updatePropsPanel() {
@@ -3186,9 +3259,11 @@ function updatePropsPanel() {
   // Type name
   rows.push('<div class="prop-type">' + (OBJ_TYPE_NAMES[t] || t) + '</div>');
 
-  // Opacity (universal)
+  // Opacity (universal, not carlabel)
+  if (t !== 'carlabel') {
   const opPct = Math.round((obj.opacity !== undefined ? obj.opacity : 1) * 100);
   rows.push(`<div class="prop-row"><label>不透明度</label><input type="range" min="0" max="100" value="${opPct}" id="pr-opacity" oninput="propSetOpacity(this.value)" onchange="saveSnap('物件不透明度')"><span class="prop-val" id="pr-opacity-val">${opPct}%</span></div>`);
+  }
 
   // Rotation (objects that have a rotation property)
   const HAS_ROT = new Set(['car','truck','bus','semi','artic','moto','hydrant','compass',
@@ -3200,8 +3275,8 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>旋轉角度</label><input type="range" min="0" max="359" step="1" value="${deg}" oninput="this.nextElementSibling.value=this.value;propSetRotationLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-rotation" min="0" max="359" step="1" value="${deg}" style="width:44px" oninput="this.previousElementSibling.value=this.value;propSetRotationLive(this.value)" onchange="propSetRotation(this.value)"><span class="prop-val">°</span></div>`);
   }
 
-  // Flip (all types except refline/reflabel/scalebar which have complex geometry or no meaning)
-  if (t !== 'refline' && t !== 'reflabel' && t !== 'scalebar') {
+  // Flip (all types except refline/reflabel/scalebar/carlabel which have complex geometry or no meaning)
+  if (t !== 'refline' && t !== 'reflabel' && t !== 'scalebar' && t !== 'carlabel') {
     const fh = !!obj.flipH, fv = !!obj.flipV;
     rows.push(`<div class="prop-row"><label>翻轉</label><div style="display:flex;gap:4px">
       <button class="btn sm${fh?' active':''}" onclick="propToggleFlip('flipH')" title="水平翻轉 ↔" style="font-size:15px;padding:1px 8px">↔</button>
@@ -3210,7 +3285,7 @@ function updatePropsPanel() {
   }
 
   // Color
-  const NO_COLOR = new Set(['position-mark', 'dimline', 'pos-seg-mark']); // these handle color in their own section
+  const NO_COLOR = new Set(['position-mark', 'dimline', 'pos-seg-mark', 'carlabel']); // these handle color in their own section
   if (obj.color !== undefined && !NO_COLOR.has(t)) {
     rows.push(`<div class="prop-row"><label>顏色</label><input type="color" id="pr-color" value="${obj.color || '#000000'}" oninput="propSetColor(this.value)" onchange="saveSnap('物件顏色')"></div>`);
   }
@@ -3362,6 +3437,24 @@ function updatePropsPanel() {
     rows.push(`<div class="prop-row"><label>文字</label><input type="text" id="pr-text" value="${obj.text || ''}" style="flex:1;background:var(--input-bg,#1e1e2e);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:12px" oninput="propSetText(this.value)" onchange="saveSnap('標籤文字')"></div>`);
   }
 
+  // carlabel
+  if (t === 'carlabel') {
+    const car = objects.find(o => o.id === obj.carId);
+    if (car) rows.push(`<div class="prop-row"><label>所屬車輛</label><span style="font-size:12px">${OBJ_TYPE_NAMES[car.type]||car.type}</span></div>`);
+    const isF = obj.labelType==='free';
+    rows.push(`<div class="prop-row"><label>標籤文字</label><span style="font-size:13px;font-weight:700;padding:1px 6px;background:var(--input-bg);border-radius:3px">${obj.text||''}</span>${isF ? ' <button class="btn sm" onclick="clEditTextProp()" style="margin-left:6px;padding:1px 7px">編輯</button>' : ''}</div>`);
+    rows.push(`<div class="prop-row"><label>字體大小</label><input type="range" min="8" max="60" step="1" value="${obj.fontSize||16}" id="pr-cl-size" oninput="this.nextElementSibling.value=this.value;clSetFontSizeLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-cl-size-n" min="8" max="60" step="1" value="${obj.fontSize||16}" style="width:44px" oninput="this.previousElementSibling.value=this.value;clSetFontSizeLive(this.value)" onchange="saveSnap('標籤字體大小')"><span class="prop-val">px</span></div>`);
+    rows.push(`<div class="prop-row"><label>文字顏色</label><input type="color" value="${obj.color||'#212121'}" oninput="clSetColor(this.value)" onchange="saveSnap('標籤文字顏色')"></div>`);
+    const nb=!!obj.noBg, bg=obj.bgColor||'#ffffff';
+    rows.push(`<div class="prop-row"><label>底色</label><input type="checkbox" id="pr-cl-nobg" ${nb?'checked':''} onchange="clSetNoBg(this.checked)" title="無底色"><span style="font-size:11px;margin:0 3px">無</span><input type="color" id="pr-cl-bg" value="${bg}" ${nb?'disabled':''} oninput="clSetBgColor(this.value)" onchange="saveSnap('標籤底色')"></div>`);
+    rows.push(`<div class="prop-row"><label>最大半徑</label><input type="range" min="30" max="500" step="5" value="${obj.maxRadius||120}" id="pr-cl-radius" oninput="this.nextElementSibling.value=this.value;clSetMaxRadiusLive(this.value)" style="flex:1;min-width:0"><input type="number" id="pr-cl-radius-n" min="30" max="500" step="5" value="${obj.maxRadius||120}" style="width:44px" oninput="this.previousElementSibling.value=this.value;clSetMaxRadiusLive(this.value)" onchange="saveSnap('標籤最大半徑')"><span class="prop-val">px</span></div>`);
+    if (isF) {
+      const fv=obj.fontFamily||'sans-serif';
+      const fopts=[{v:'sans-serif',l:'黑體'},{v:'serif',l:'明體'},{v:"'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif",l:'標楷體'},{v:'monospace',l:'等寬'}].map(({v,l})=>`<option value="${v}"${fv===v?' selected':''}>${l}</option>`).join('');
+      rows.push(`<div class="prop-row"><label>字體</label><select id="pr-cl-font" onchange="clSetFont(this.value);saveSnap('標籤字體')">${fopts}</select></div>`);
+    }
+  }
+
   // Freetext
   if (t === 'freetext') {
     const fontVal = obj.fontFamily || 'sans-serif';
@@ -3422,6 +3515,27 @@ function tpSetFont(val) {
   selectedObjs.forEach(i => { if (objects[i]?.type === 'reflabel') objects[i].fontFamily = val; });
   composite(); markDirty(); saveSnap('設定字體');
 }
+
+// ── carlabel property functions ────────────────────────────
+function _clObj() { return selectedObjs.length===1 && objects[selectedObjs[0]]?.type==='carlabel' ? objects[selectedObjs[0]] : null; }
+function clSetFontSizeLive(v) { const o=_clObj(); if(!o) return; o.fontSize=Math.max(8,Math.min(60,+v)); _syncCarlabelBBox(o); composite(); markDirty(); }
+function clSetColor(v) { const o=_clObj(); if(!o) return; o.color=v; composite(); markDirty(); }
+function clSetBgColor(v) { const o=_clObj(); if(!o) return; o.bgColor=v; composite(); markDirty(); }
+function clSetNoBg(v) { const o=_clObj(); if(!o) return; o.noBg=!!v; const bg=document.getElementById('pr-cl-bg')||document.getElementById('ctx-cl-bg'); if(bg) bg.disabled=v; composite(); markDirty(); saveSnap('標籤底色'); }
+function clSetMaxRadiusLive(v) { const o=_clObj(); if(!o) return; o.maxRadius=Math.max(30,Math.min(500,+v)); composite(); markDirty(); }
+function clSetFont(v) { const o=_clObj(); if(!o||o.labelType!=='free') return; o.fontFamily=v; _syncCarlabelBBox(o); composite(); markDirty(); }
+function clEditText() {
+  const o=_clObj(); if(!o||o.labelType!=='free') return;
+  openModal('編輯文字', `<input type="text" id="cl-edit-inp" style="width:100%" value="${(o.text||'').replace(/"/g,'&quot;')}">`, [
+    { text:'取消', cls:'btn', fn: closeModal },
+    { text:'確認', cls:'btn primary', fn: () => {
+      const txt=(document.getElementById('cl-edit-inp')?.value||'').trim()||'?';
+      closeModal(); const ob=_clObj(); if(ob){ob.text=txt;_syncCarlabelBBox(ob);composite();markDirty();saveSnap('編輯標籤文字');}
+    }}
+  ]);
+  setTimeout(() => { const i=document.getElementById('cl-edit-inp'); i?.focus(); i?.select(); }, 40);
+}
+function clEditTextProp() { clEditText(); }
 
 function tpSetSize(val) {
   const v = Math.max(8, Math.min(120, parseFloat(val) || 14));
@@ -4913,6 +5027,19 @@ function onMove(e) {
         if (!objects[idx]) return;
         const orig = selectObjOrig[i];
         const o = objects[idx];
+        if (o.type === 'carlabel') {
+          const car = objects.find(c => c.id === o.carId);
+          if (car) {
+            let newOx = (orig.offsetX||0) + dx;
+            let newOy = (orig.offsetY||0) + dy;
+            const dist = Math.sqrt(newOx*newOx + newOy*newOy);
+            const mr = o.maxRadius || 120;
+            if (dist > mr) { const s = mr/dist; newOx *= s; newOy *= s; }
+            o.offsetX = newOx; o.offsetY = newOy;
+            _syncCarlabelBBox(o);
+          }
+          return;
+        }
         const isVehicle = CAR_TYPES.has(o.type) || MOTO_TYPES.has(o.type);
         if (isVehicle && _hasPosLock(o)) {
           // Slide along refline: project drag delta onto refline tangent. Preserves
@@ -5880,6 +6007,10 @@ function showCtxMenu(e) {
       if (hitPM < 0 && ptOnPositionMark(pt, o)) hitPM = i;
       continue;
     }
+    if (o.type === 'carlabel') {
+      if (hitIdx < 0 && ptOnCarlabel(pt, o)) { hitIdx = i; break; }
+      continue;
+    }
     if (o.type === 'marking-chanl' ? ptOnMarkingChanl(pt, o) : o.type === 'marking-turn' ? ptOnMarkingTurn(pt, o) : ptInObj(pt, o)) { hitIdx = i; break; }
   }
   if (hitIdx < 0) hitIdx = hitPM;
@@ -5985,6 +6116,30 @@ function showCtxMenu(e) {
   document.getElementById('ctx-sizemark-item').style.display   = showSMCreate ? '' : 'none';
   document.getElementById('ctx-sizemark-remove').style.display = showSMRemove ? '' : 'none';
 
+  const hasSingleVehicle = selectedObjs.length===1 && selObj && (CAR_TYPES.has(selObj.type)||MOTO_TYPES.has(selObj.type));
+  const vehicleHasCarlabel = hasSingleVehicle && selObj.id && objects.some(o=>o.type==='carlabel'&&o.carId===selObj.id);
+  const hasSingleCarlabel = selectedObjs.length===1 && selObj?.type==='carlabel';
+  const showCarlabelCreate = hasSingleVehicle;
+  const showCarlabelRemove = (hasSingleVehicle && vehicleHasCarlabel) || hasSingleCarlabel;
+  document.getElementById('ctx-carlabel-sep').style.display = (showCarlabelCreate||showCarlabelRemove) ? '' : 'none';
+  document.getElementById('ctx-carlabel-item').style.display = showCarlabelCreate ? '' : 'none';
+  document.getElementById('ctx-carlabel-remove').style.display = showCarlabelRemove ? '' : 'none';
+
+  // carlabel property items (when carlabel is selected)
+  const clItems = ['ctx-cl-sep','ctx-cl-size-item','ctx-cl-color-item','ctx-cl-bg-item','ctx-cl-radius-item','ctx-cl-font-item','ctx-cl-edit-item'];
+  clItems.forEach(id => { const el=document.getElementById(id); if(el) el.style.display = hasSingleCarlabel ? '' : 'none'; });
+  if (hasSingleCarlabel) {
+    const cl = selObj;
+    const sEl=document.getElementById('ctx-cl-size'); if(sEl){sEl.value=cl.fontSize||16; document.getElementById('ctx-cl-size-val').textContent=cl.fontSize||16;}
+    const cEl=document.getElementById('ctx-cl-color'); if(cEl) cEl.value=cl.color||'#212121';
+    const bEl=document.getElementById('ctx-cl-bg'); if(bEl) bEl.value=cl.bgColor||'#ffffff';
+    const nbEl=document.getElementById('ctx-cl-nobg'); if(nbEl) nbEl.checked=!!cl.noBg;
+    const rEl=document.getElementById('ctx-cl-radius'); if(rEl){rEl.value=cl.maxRadius||120; document.getElementById('ctx-cl-radius-val').textContent=cl.maxRadius||120;}
+    document.getElementById('ctx-cl-font-item').style.display = cl.labelType==='free' ? '' : 'none';
+    document.getElementById('ctx-cl-edit-item').style.display = cl.labelType==='free' ? '' : 'none';
+    if(cl.labelType==='free') { const fEl=document.getElementById('ctx-cl-font'); if(fEl) fEl.value=cl.fontFamily||'sans-serif'; }
+  }
+
   const rp = hasSingleRefpoint ? objects[selectedObjs[0]] : null;
   const rpHasRefline = rp?.id && objects.some(o => o.type === 'refline' && o.refpointId === rp.id);
   document.getElementById('ctx-refline-sep').style.display    = hasSingleRefpoint ? '' : 'none';
@@ -6025,8 +6180,8 @@ function showCtxMenu(e) {
     if (cs) cs.value = mm.color||'#e53935';
   }
 
-  // Flip items: hide for refline/reflabel/position-mark/size-mark
-  const canFlip = hasObj && selectedObjs.every(i => objects[i] && !['refline','reflabel','position-mark','size-mark'].includes(objects[i].type));
+  // Flip items: hide for refline/reflabel/position-mark/size-mark/carlabel
+  const canFlip = hasObj && selectedObjs.every(i => objects[i] && !['refline','reflabel','position-mark','size-mark','carlabel'].includes(objects[i].type));
   document.getElementById('ctx-flip-sep').style.display = canFlip ? '' : 'none';
   document.getElementById('ctx-flip-h').style.display   = canFlip ? '' : 'none';
   document.getElementById('ctx-flip-v').style.display   = canFlip ? '' : 'none';
@@ -6206,6 +6361,10 @@ function ctxDelete() {
   }
   for (let i = objects.length - 1; i >= 0; i--) {
     if (objects[i].type === 'size-mark' && deletedCarIds.includes(objects[i].carId))
+      objects.splice(i, 1);
+  }
+  for (let i = objects.length - 1; i >= 0; i--) {
+    if (objects[i].type === 'carlabel' && deletedCarIds.includes(objects[i].carId))
       objects.splice(i, 1);
   }
   selectedObjs = []; syncSel();
@@ -6846,6 +7005,64 @@ function drawHydrant(ctx, x, y, w, h, color) {
   }
 }
 
+// ── carlabel helpers ──────────────────────────────────────
+function _getCarlabelMetrics(obj) {
+  const car = objects.find(c => c.id === obj.carId);
+  if (!car) return null;
+  const cx = car.x + car.w/2 + (obj.offsetX||0);
+  const cy = car.y + car.h/2 + (obj.offsetY||0);
+  let r, hw, hh;
+  if (obj.labelType === 'letter') {
+    r = hw = hh = Math.max(12, (obj.fontSize||16)*0.72 + 5);
+  } else {
+    hw = Math.max(16, (obj.fontSize||16)*0.35*Math.max(1,(obj.text||'').length) + 12);
+    hh = Math.max(10, (obj.fontSize||16)*0.65 + 6);
+    r  = Math.sqrt(hw*hw + hh*hh);
+  }
+  return { cx, cy, r, hw, hh };
+}
+
+function _syncCarlabelBBox(obj) {
+  const m = _getCarlabelMetrics(obj);
+  if (!m) return;
+  obj.x = m.cx - m.hw; obj.y = m.cy - m.hh;
+  obj.w = m.hw*2;       obj.h = m.hh*2;
+}
+
+function ptOnCarlabel(pt, obj) {
+  const m = _getCarlabelMetrics(obj);
+  if (!m) return false;
+  const dx = pt.x - m.cx, dy = pt.y - m.cy;
+  if (obj.labelType === 'letter') return dx*dx + dy*dy <= m.r*m.r;
+  return Math.abs(dx) <= m.hw && Math.abs(dy) <= m.hh;
+}
+
+function drawCarlabel(ctx, obj) {
+  const m = _getCarlabelMetrics(obj);
+  if (!m) return;
+  _syncCarlabelBBox(obj);
+  const { cx, cy, r, hw, hh } = m;
+  const textColor = obj.color || '#212121';
+  const bgColor   = obj.bgColor || '#ffffff';
+  if (!obj.noBg) {
+    ctx.fillStyle   = bgColor;
+    ctx.strokeStyle = textColor;
+    if (obj.labelType === 'letter') {
+      ctx.lineWidth = Math.max(1, r*0.08);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    } else {
+      ctx.lineWidth = Math.max(1, 1.5);
+      ctx.fillRect(cx-hw, cy-hh, hw*2, hh*2);
+      ctx.strokeRect(cx-hw, cy-hh, hw*2, hh*2);
+    }
+  }
+  ctx.font = `bold ${obj.fontSize||16}px ${obj.fontFamily||'sans-serif'}`;
+  ctx.fillStyle   = textColor;
+  ctx.textAlign   = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(obj.text||'', cx, cy);
+}
+
 function drawCompass(ctx, x, y, w, h, color) {
   const clr = color || '#212121';
   const cx = x + w/2, cy = y + h/2;
@@ -6998,6 +7215,11 @@ function _applyGlobalScale(newScale) {
     // derived marks follow their parent car automatically
     if (t === 'position-mark' || t === 'pos-seg-mark' || t === 'size-mark') continue;
 
+    if (t === 'carlabel') {
+      if (o.offsetX != null) { o.offsetX *= f; o.offsetY *= f; }
+      if (o.maxRadius != null) o.maxRadius *= f;
+      continue;
+    }
     if (t === 'reflabel') {
       if (o.radius != null) o.radius *= f;
       continue;

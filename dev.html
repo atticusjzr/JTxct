@@ -295,6 +295,21 @@
   <div class="ctx-sep" id="ctx-sizemark-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-sizemark-item" style="display:none" onclick="ctxMarkSizeMarks()"><span>標記車長車寬</span></div>
   <div class="ctx-item" id="ctx-sizemark-remove" style="display:none" onclick="ctxRemoveSizeMarks()"><span>移除車長車寬</span></div>
+  <div class="ctx-sep" id="ctx-carlabel-sep" style="display:none"></div>
+  <div class="ctx-item ctx-has-sub" id="ctx-carlabel-item" style="display:none">
+    <span>命名車輛</span>
+    <div id="ctx-carlabel-sub">
+      <div class="ctx-item" onclick="ctxAddCarlabel('A')"><span style="font-weight:700">A</span></div>
+      <div class="ctx-item" onclick="ctxAddCarlabel('B')"><span style="font-weight:700">B</span></div>
+      <div class="ctx-item" onclick="ctxAddCarlabel('C')"><span style="font-weight:700">C</span></div>
+      <div class="ctx-item" onclick="ctxAddCarlabel('D')"><span style="font-weight:700">D</span></div>
+      <div class="ctx-item" onclick="ctxAddCarlabel('E')"><span style="font-weight:700">E</span></div>
+      <div class="ctx-item" onclick="ctxAddCarlabel('F')"><span style="font-weight:700">F</span></div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item" onclick="ctxAddCarlabel('free')"><span>自由命名…</span></div>
+    </div>
+  </div>
+  <div class="ctx-item" id="ctx-carlabel-remove" style="display:none" onclick="ctxRemoveCarlabel()"><span>移除車輛名稱</span></div>
   <div class="ctx-sep" id="ctx-refline-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-refline-create" style="display:none" onclick="ctxCreateRefline()"><span>建立基準線</span></div>
   <div class="ctx-item" id="ctx-refline-delete" style="display:none" onclick="ctxDeleteRefline()"><span>刪除基準線</span></div>
@@ -326,6 +341,41 @@
   </div>
   <div class="ctx-sep" id="ctx-reflabel-edit-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-reflabel-edit-item" style="display:none" onclick="ctxReflabelEdit()"><span>編輯</span></div>
+  <div class="ctx-sep" id="ctx-cl-sep" style="display:none"></div>
+  <div class="ctx-item ctx-thick-row" id="ctx-cl-size-item" style="display:none" onclick="event.stopPropagation()">
+    <label>字體大小</label>
+    <input type="range" id="ctx-cl-size" min="8" max="60" step="1" value="16"
+      oninput="this.nextElementSibling.textContent=this.value;clSetFontSizeLive(this.value)"
+      onchange="saveSnap('標籤字體大小')" style="flex:1;min-width:80px">
+    <span id="ctx-cl-size-val" style="min-width:20px;text-align:right;font-size:11px;color:var(--dim)">16</span>
+  </div>
+  <div class="ctx-item" id="ctx-cl-color-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>文字顏色</label>
+    <input type="color" id="ctx-cl-color" value="#212121" oninput="clSetColor(this.value)" onchange="saveSnap('標籤文字顏色')">
+  </div>
+  <div class="ctx-item" id="ctx-cl-bg-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>底色</label>
+    <input type="checkbox" id="ctx-cl-nobg" onchange="clSetNoBg(this.checked)" title="無底色">
+    <span style="font-size:11px">無</span>
+    <input type="color" id="ctx-cl-bg" value="#ffffff" oninput="clSetBgColor(this.value)" onchange="saveSnap('標籤底色')">
+  </div>
+  <div class="ctx-item ctx-thick-row" id="ctx-cl-radius-item" style="display:none" onclick="event.stopPropagation()">
+    <label>最大半徑</label>
+    <input type="range" id="ctx-cl-radius" min="30" max="500" step="5" value="120"
+      oninput="this.nextElementSibling.textContent=this.value;clSetMaxRadiusLive(this.value)"
+      onchange="saveSnap('標籤最大半徑')" style="flex:1;min-width:80px">
+    <span id="ctx-cl-radius-val" style="min-width:28px;text-align:right;font-size:11px;color:var(--dim)">120</span>
+  </div>
+  <div class="ctx-item" id="ctx-cl-font-item" style="display:none;cursor:default" onclick="event.stopPropagation()">
+    <label>字體</label>
+    <select id="ctx-cl-font" onchange="clSetFont(this.value);saveSnap('標籤字體')">
+      <option value="sans-serif">黑體</option>
+      <option value="serif">明體</option>
+      <option value="'BiauKai','DFKai-SB','標楷體','Kaiti TC',serif">標楷體</option>
+      <option value="monospace">等寬</option>
+    </select>
+  </div>
+  <div class="ctx-item" id="ctx-cl-edit-item" style="display:none" onclick="clEditText()"><span>編輯文字</span></div>
   <div class="ctx-sep" id="ctx-mlabel-sep" style="display:none"></div>
   <div class="ctx-item" id="ctx-mlabel-edit" style="display:none" onclick="ctxMeasureEdit()"><span>編輯數字</span></div>
   <div class="ctx-item ctx-thick-row" id="ctx-mlabel-perp" style="display:none" onclick="event.stopPropagation()">
