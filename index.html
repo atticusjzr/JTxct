@@ -6087,6 +6087,13 @@ function onMove(e) {
         } else {
           o.x = orig.x + dx; o.y = orig.y + dy;
         }
+        if (o.type === 'refline') {
+          // Must move x2 (the free end); x1 is re-derived from refpoint in drawRefLine,
+          // but only works correctly if x2 also moved by the same (dx,dy).
+          o.x2 = orig.x2 + dx; o.y2 = orig.y2 + dy;
+          o.x1 = orig.x1 + dx; o.y1 = orig.y1 + dy;
+          syncReflineBBox(o);
+        }
         if (o.type === 'marking-turn' || o.type === 'marking-chanl') {
           o.cx = orig.cx + dx;
           o.cy = orig.cy + dy;
