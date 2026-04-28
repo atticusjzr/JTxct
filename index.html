@@ -8067,21 +8067,78 @@ function _pxFromDisplay(v) {
   const n = Math.min(100, Math.max(0, parseFloat(v) || 0));
   return n * PX_PER_CM * 100 / _scale;
 }
+const SCALE_MIN = 20, SCALE_MAX = 2000;
+
+function _applyGlobalScale(newScale) {
+  const oldScale = _scale;
+  newScale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, Math.round(newScale)));
+  if (oldScale === newScale) return;
+  const f = oldScale / newScale;
+
+  for (const o of objects) {
+    const t = o.type;
+    // freetext stays fixed on the page (user label, not a measured object)
+    if (t === 'freetext') continue;
+    // derived marks follow their parent car automatically
+    if (t === 'position-mark' || t === 'pos-seg-mark' || t === 'size-mark') continue;
+
+    if (t === 'reflabel') {
+      if (o.radius != null) o.radius *= f;
+      continue;
+    }
+    if (t === 'refline') {
+      o.x1 *= f; o.y1 *= f; o.x2 *= f; o.y2 *= f;
+      if (o.len1 != null) o.len1 *= f;
+      if (o.measure?.d != null) o.measure.d *= f;
+      syncReflineBBox(o);
+      continue;
+    }
+    if (t === 'dimline') {
+      if (o.cx != null) { o.cx *= f; o.cy *= f; }
+      if (o.maxLen != null) o.maxLen *= f;
+      if (o.fixedLen != null) o.fixedLen *= f;
+      syncDimlineBBox(o);
+      continue;
+    }
+    if (t === 'marking-turn' || t === 'marking-chanl') {
+      if (o.cx != null) { o.cx *= f; o.cy *= f; }
+      if (o.a1x != null) { o.a1x *= f; o.a1y *= f; o.a2x *= f; o.a2y *= f; }
+      continue;
+    }
+    // All remaining types use x, y, w, h
+    if (o.x != null) o.x *= f;
+    if (o.y != null) o.y *= f;
+    if (o.w != null) o.w *= f;
+    if (o.h != null) o.h *= f;
+    if (o.dashLen != null) o.dashLen *= f;
+    if (o.gapLen  != null) o.gapLen  *= f;
+  }
+
+  _scale = newScale;
+  const sd = document.getElementById('scale-display');
+  if (sd) sd.textContent = '1:' + _scale;
+  composite(); markDirty(); saveSnap('更改比例尺');
+}
+
 function openScaleDialog() {
+  const cur = _scale;
   openModal('更改比例尺',
-    `<label style="display:block;margin-bottom:6px;font-size:12px;color:var(--dim)">輸入比例尺分母（例如：100 代表 1:100，50 代表 1:50）</label>
-     <input type="number" id="scale-inp" min="1" max="9999" step="1" value="${_scale}" style="width:100%">
-     <p style="margin:10px 0 0;font-size:11px;color:var(--dim)">目前：1:${_scale}（1cm 紙面 = ${(_scale/100).toFixed(2)}m 現實）</p>`,
+    `<label style="display:block;margin-bottom:4px;font-size:12px;color:var(--dim)">比例尺（${SCALE_MIN}–${SCALE_MAX}）</label>
+     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+       <input type="range" id="scale-slider" min="${SCALE_MIN}" max="${SCALE_MAX}" step="5" value="${cur}"
+              style="flex:1;min-width:0"
+              oninput="document.getElementById('scale-inp').value=this.value;document.getElementById('scale-preview').textContent='1:'+this.value">
+       <input type="number" id="scale-inp" min="${SCALE_MIN}" max="${SCALE_MAX}" step="5" value="${cur}"
+              style="width:64px"
+              oninput="document.getElementById('scale-slider').value=Math.max(${SCALE_MIN},Math.min(${SCALE_MAX},this.value));document.getElementById('scale-preview').textContent='1:'+(+this.value||${cur})">
+     </div>
+     <p id="scale-preview" style="margin:4px 0 0;font-size:12px;font-weight:600;color:var(--accent,#5c6bc0)">1:${cur}</p>
+     <p style="margin:4px 0 0;font-size:11px;color:var(--dim)">更改比例尺會等比縮放所有物件（文字標籤除外），顯示數值不變。</p>`,
     [
       { text:'取消', cls:'btn', fn: closeModal },
-      { text:'確認', cls:'btn primary', fn: () => {
-        const v = parseInt(document.getElementById('scale-inp')?.value || _scale);
-        if (v > 0) {
-          _scale = v;
-          const sd = document.getElementById('scale-display');
-          if (sd) sd.textContent = '1:' + _scale;
-          composite(); markDirty();
-        }
+      { text:'套用', cls:'btn primary', fn: () => {
+        const v = parseInt(document.getElementById('scale-inp')?.value) || cur;
+        _applyGlobalScale(v);
         closeModal();
       }},
     ]
