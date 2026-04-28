@@ -3144,6 +3144,8 @@ function _collectHardLocks(car, rl, excludeObj, axes) {
       con.target = con.current;
       out.push(con);
     } else if (o.type === 'pos-seg-mark' && typeof o.segIdx === 'number') {
+      // Pos-seg lock = LENGTH lock (X_b - X_a = const), not 2 individual X locks.
+      // The car can still slide along the refline (both endpoints translate together).
       const segMode = o.mode || (isMoto ? 'wheel' : 'body');
       const ancArr = isMoto ? getMotoWheelBottoms(car)
         : (segMode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car));
@@ -3155,12 +3157,16 @@ function _collectHardLocks(car, rl, excludeObj, axes) {
         return { pm: p, t: (c.x - rl.x1)*axes.tx + (c.y - rl.y1)*axes.ty };
       }).filter(Boolean).sort((a, b) => a.t - b.t);
       if (o.segIdx >= pmsT.length - 1) continue;
-      for (const e of [pmsT[o.segIdx], pmsT[o.segIdx + 1]]) {
-        const con = { type: 'X', mode: e.pm.mode, cornerIdx: e.pm.cornerIdx, target: 0 };
-        if (!_refreshConstraint(con, car, rl, axes)) continue;
-        con.target = con.current;
-        out.push(con);
-      }
+      const A = pmsT[o.segIdx], B = pmsT[o.segIdx + 1];
+      const con = {
+        type: 'X_DIFF',
+        mode: B.pm.mode, cornerIdx: B.pm.cornerIdx,
+        mode2: A.pm.mode, cornerIdx2: A.pm.cornerIdx,
+        target: 0,
+      };
+      if (!_refreshConstraint(con, car, rl, axes)) continue;
+      con.target = con.current;
+      out.push(con);
     } else if (o.type === 'size-mark') {
       if (o.axis === 'length') out.push({ type: 'W', target: car.w, current: car.w });
       else if (o.axis === 'width') out.push({ type: 'H', target: car.h, current: car.h });
@@ -3169,9 +3175,16 @@ function _collectHardLocks(car, rl, excludeObj, axes) {
   return out;
 }
 
+// Per-constraint tolerance: angular constraints use radian tolerance; everything else uses px.
+function _conResidualOK(con, linTol) {
+  const r = Math.abs((con.target ?? 0) - (con.current ?? 0));
+  const tol = (con.type === 'R') ? 0.005 : linTol;  // ~0.3° angular vs px
+  return r < tol;
+}
+
 // Run unified constraint edit: gather locks + edit constraints, Newton-solve up to
 // maxIter times, verify residuals. Rolls back car state on failure.
-function _runConstraintEdit(car, rl, locks, editCons, maxIter = 4, tol = 0.5) {
+function _runConstraintEdit(car, rl, locks, editCons, maxIter = 4, linTol = 0.5) {
   const dx = rl.x2 - rl.x1, dy = rl.y2 - rl.y1;
   const len = Math.sqrt(dx*dx + dy*dy);
   if (len < 1) return false;
@@ -3182,17 +3195,17 @@ function _runConstraintEdit(car, rl, locks, editCons, maxIter = 4, tol = 0.5) {
     for (const con of all) {
       if (!_refreshConstraint(con, car, rl, axes)) { Object.assign(car, snap); return false; }
     }
-    let maxR = 0;
-    for (const con of all) {
-      const r = Math.abs((con.target ?? 0) - (con.current ?? 0));
-      if (r > maxR) maxR = r;
+    // Skip early-return on iteration 0: always run at least one solve so the user's
+    // intent reaches the state. Subsequent iterations bail out when residuals settle.
+    if (iter > 0) {
+      let allOk = true;
+      for (const con of all) { if (!_conResidualOK(con, linTol)) { allOk = false; break; } }
+      if (allOk) return true;
     }
-    if (maxR < tol) return true;
     const d = _unifiedSolve(car, rl, all);
     if (!d || !Number.isFinite(d.dcx + d.dcy + d.dR + d.dw + d.dh)) {
       Object.assign(car, snap); return false;
     }
-    // bound check: don't let dimensions explode or invert
     const wNew = car.w + d.dw, hNew = car.h + d.dh;
     if (wNew < 20 || hNew < 20 || wNew > car.w * 10 || hNew > car.h * 10) {
       Object.assign(car, snap); return false;
@@ -3200,15 +3213,13 @@ function _runConstraintEdit(car, rl, locks, editCons, maxIter = 4, tol = 0.5) {
     _applyDelta(car, d);
   }
   // Final check
-  let maxR = 0;
   for (const con of all) {
     if (!_refreshConstraint(con, car, rl, axes)) { Object.assign(car, snap); return false; }
-    const r = Math.abs((con.target ?? 0) - (con.current ?? 0));
-    if (r > maxR) maxR = r;
   }
-  if (maxR < tol) return true;
-  Object.assign(car, snap);
-  return false;
+  for (const con of all) {
+    if (!_conResidualOK(con, linTol)) { Object.assign(car, snap); return false; }
+  }
+  return true;
 }
 
 // Build edit constraints for each editable type
