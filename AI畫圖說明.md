@@ -2,7 +2,7 @@
 
 這份文件把畫法說明（技能檔）、規則、提問範本和一份可匯入的範例 JSON 放在一起。把這份文件的連結（或全文）連同手繪草圖、案件資料交給任何 AI（Claude、ChatGPT、Gemini…），請它照草圖畫出現場圖。
 
-繪圖工具本體是同一個倉庫裡的 index.html（線上版：https://atticusjzr.github.io/JTxct/ ）；範例在 example.json／example.png，技能檔全文在 SKILL.md。
+繪圖工具本體是同一個倉庫裡的 index.html（線上版：https://atticusjzr.github.io/JTxct/ ）；範例在 example.json／example2.json／example3.json（各附同名 .png），三張分攤不同元件，寫 JSON 時照抄同類型物件的欄位，技能檔全文在 SKILL.md。
 
 ## 一、給 AI 的規則（一定照做）
 
