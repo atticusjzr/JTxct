@@ -306,6 +306,11 @@ placeMoto(A,rear,front); objects.push(A); composite(); saveSnap('放車');
 - 核對時直接讀匯出的 PNG（1123×794）裁切放大車輛周圍看，比截整個視窗準。
 - 出圖：工具列「匯出圖檔」下載 PNG；「列印」為 A4 橫向；「匯出檔案」下載 JSON 專案檔，可用「匯入檔案」重新開啟。
 
+- 🔴 **交件一定附「可直接編輯的 html」**：把工具 index.html 和專案 JSON 合成一個單檔，使用者雙擊打開就已載入整張圖（含圖層、鎖定、比例尺），可以直接改，不用再手動「匯入檔案」。檔名用「案件名-可編輯.html」，跟 PNG、JSON 一起交。
+  - 有 Python：`python3 scripts/make_editable.py <index.html> <專案.json> <案件名-可編輯.html>`（本技能附的腳本）。
+  - 沒有 Python（網頁版 AI）：原樣複製 index.html，在最後的 `</body>` 前插入一段 `<script>`，內容是把專案 JSON 放進 `const data = {...}`，等 `Layer`、`_baseImg`、`_topImg` 就緒後照 `cmdImport` 的步驟重建：`layers=[]` → 每層 `new Layer(name)`＋`await l.loadDataURL(data)`、帶回 `specialType／a123／locked`、特殊層 `specialImg` 指回 `_baseImg／_topImg` → `objects=data.objects` → `_migrateA123Freetext()` → 設 `_scale` → `setProj(name); composite(); renderLayers(); clearDirty(); saveSnap('開啟專案'); centerOnTemplate();`。JSON 裡的 `</` 要寫成 `<\/`，免得提早結束 script。
+  - 交件前實際打開一次核對：圖層與物件數對得上、畫面跟 PNG 一致。
+
 ## 12. Playwright 操作備註
 
 - 要給人看就開有畫面的瀏覽器：`p.chromium.launch(channel='chrome', headless=False, slow_mo=300, args=['--window-size=1600,1000'])`，結尾保持開啟（例如 `pg.wait_for_timeout(600000)`），別太快自動關閉。

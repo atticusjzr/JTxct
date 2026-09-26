@@ -99,4 +99,5 @@ bash build.sh
   - [example.json](example.json)／[example.png](example.png)：十字路口（圓弧路緣、雙黃線、斑馬線、停止線、機車停等區、待轉區、黃網格、基準點）
   - [example2.json](example2.json)／[example2.png](example2.png)：直路機車倒地（虛線車道、箭頭、路面「慢」字、停車格、消防栓、電線桿、側視倒地機車車輪定位、小客車四角定位與車長車寬、自述行向箭頭、尺寸線、路段方向標示）
   - [example3.json](example3.json)／[example3.png](example3.png)：T 字路口多車種（分隔島、轉向／直行轉向／三向箭頭、「停」字、公車停靠區、紅綠燈、小貨車、公車、大貨車、俯視機車、「靜止」註記、直式路段方向標示）
+- 可編輯範例（雙擊即載入整張圖）：[example-可編輯.html](example-可編輯.html)、[example2-可編輯.html](example2-可編輯.html)、[example3-可編輯.html](example3-可編輯.html)；合成腳本 [scripts/make_editable.py](scripts/make_editable.py)
 - 線上版工具：https://atticusjzr.github.io/JTxct/

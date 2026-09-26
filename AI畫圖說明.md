@@ -23,6 +23,10 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42m
 8. **定位量測數字**（車輪／車角到基準線的距離）若寫不出正確物件，可以只放好基準點、基準線和車並說明；使用者匯入後在工具裡對車按右鍵「標記定位」會自動量出來。
 9. 回覆最後自評：哪些地方沒把握。
 
+
+### 交件格式（除 JSON 與預覽圖外）
+- 🔴 另交一個「案件名-可編輯.html」：把 index.html 原樣複製，在最後的 `</body>` 前插一段 `<script>` 自動載入你的 JSON（做法見 SKILL.md〈檢查與出圖〉；範例：example-可編輯.html／example2-可編輯.html／example3-可編輯.html）。使用者雙擊就能直接看、直接改，不用手動匯入。能跑 Python 的可用 `scripts/make_editable.py <index.html> <專案.json> <輸出.html>`。
+
 ## 二、可以直接貼給 AI 的提問
 
 ```
