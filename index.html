@@ -3666,7 +3666,7 @@ function _unifiedSolve(car, rl, constraints) {
     r.push((con.target ?? 0) - (con.current ?? 0));
   }
   // weights: penalize translation more, rotation cheap
-  const W2 = [9, 9, 1, 4, 4];
+  const R2 = (car.w*car.w + car.h*car.h)/4; const W2 = [1, 1, 25*R2, 25, 25];  // 角度權重換算成像素²，讓改數字優先平移
   const lambda2 = 0.001;
   const JTJ = [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]];
   const JTr = [0,0,0,0,0];
@@ -3722,6 +3722,27 @@ function _collectHardLocks(car, rl, excludeObj, axes) {
         mode2: A.pm.mode, cornerIdx2: A.pm.cornerIdx,
         target: 0,
       };
+      if (!_refreshConstraint(con, car, rl, axes)) continue;
+      con.target = con.current;
+      out.push(con);
+    } else if (o.type === 'pos-seg-mark' && o.segIdx === 'rp') {
+      // rp lock: 基準點到最近垂足的距離固定 → 那個角沿基準線的位置 X 固定
+      const rp = objects.find(q => q.type === 'refpoint' && q.id === rl.refpointId);
+      if (!rp) continue;
+      const segMode = o.mode || (isMoto ? 'wheel' : 'body');
+      const ancArr = isMoto ? getMotoWheelBottoms(car)
+        : (segMode === 'wheel' ? getCarWheelCorners(car) : getCarBodyCorners(car));
+      const Xrp = (rp.x + rp.w/2 - rl.x1)*axes.tx + (rp.y + rp.h/2 - rl.y1)*axes.ty;
+      let best = null, bd = Infinity;
+      for (const p of objects) {
+        if (p.type !== 'position-mark' || p.carId !== car.id || typeof p.cornerIdx !== 'number') continue;
+        if (!isMoto && p.mode !== segMode) continue;
+        const c = ancArr[p.cornerIdx]; if (!c) continue;
+        const d = Math.abs((c.x - rl.x1)*axes.tx + (c.y - rl.y1)*axes.ty - Xrp);
+        if (d < bd) { bd = d; best = p; }
+      }
+      if (!best) continue;
+      const con = { type: 'X', mode: best.mode, cornerIdx: best.cornerIdx, target: 0 };
       if (!_refreshConstraint(con, car, rl, axes)) continue;
       con.target = con.current;
       out.push(con);
@@ -9865,12 +9886,41 @@ function _applyConstraint(obj, val) {
     else if (obj.type === 'size-mark')     editCons = _editConsForSizeMark(car, rl, obj, targetPx);
     if (!editCons || !editCons.length) return;
 
-    const locks = _collectHardLocks(car, rl, obj, axes);
-    if (!_runConstraintEdit(car, rl, locks, editCons)) {
-      _showLockBlockedModal([]);
+    const lockedObjs = objects.filter(o => o !== obj && o.carId === car.id && o.constraintLocked
+      && (o.type === 'position-mark' || o.type === 'pos-seg-mark' || o.type === 'size-mark'));
+    const before = lockedObjs.map(_markRawLen);
+    const snap = { x: car.x, y: car.y, w: car.w, h: car.h, rotation: car.rotation };
+    const extras = [[], [{ type: 'R' }], [{ type: 'R' }, { type: 'W' }, { type: 'H' }]];
+    for (const ex of extras) {
+      Object.assign(car, snap);
+      const locks = _collectHardLocks(car, rl, obj, axes);
+      for (const e of ex) {
+        const con = { ...e, target: 0 };
+        _refreshConstraint(con, car, rl, axes); con.target = con.current;
+        locks.push(con);
+      }
+      const ec = editCons.map(c => ({ ...c }));
+      if (!_runConstraintEdit(car, rl, locks, ec, 12, 0.1)) continue;
+      const ok = lockedObjs.every((o, i) => {
+        const a = _markRawLen(o), b = before[i];
+        return a == null || b == null || Math.abs(a - b) < 0.5;
+      });
+      if (ok) return;
     }
+    Object.assign(car, snap);
+    _showLockBlockedModal(lockedObjs.filter(o => o.type === 'position-mark'));
     return;
   }
+}
+
+// 定位線／沿線線段／車長車寬標記的實際長度（px）；拿來核對鎖定的線有沒有被動到
+function _markRawLen(o) {
+  let ep = null;
+  if (o.type === 'position-mark') { const e = _posMarkEndpoints(o); if (e) ep = { a: e.c, b: e.f }; }
+  else if (o.type === 'pos-seg-mark') ep = _posSegFeet(o);
+  else if (o.type === 'size-mark') ep = _sizeMarkEndpoints(o);
+  if (!ep) return null;
+  return Math.hypot(ep.b.x - ep.a.x, ep.b.y - ep.a.y);
 }
 
 function _showLockBlockedModal(lockedPMs) {
@@ -9878,7 +9928,7 @@ function _showLockBlockedModal(lockedPMs) {
   const corners = ['第1角', '第2角', '第3角', '第4角'];
   const names = lockedPMs.map(pm => `定位線（${corners[pm.cornerIdx] || '角' + pm.cornerIdx}）`).join('、');
   openModal('無法編輯',
-    `<p style="margin:0 0 8px">因為 <b>${names}</b> 已鎖定，無法自由改變此線段的長度。</p>
+    `<p style="margin:0 0 8px">${names ? '因為 <b>' + names + '</b> 等線段已鎖定，' : '在目前鎖定的線段都不變的前提下，'}改不到這個數字（車已還原）。請解鎖其中一條再改。</p>
      <p style="margin:0;font-size:11px;color:var(--dim)">如需自由輸入數字，請在右上角切換為「自由編輯模式」。</p>`,
     [{ text:'確認', cls:'btn primary', fn: closeModal }]
   );

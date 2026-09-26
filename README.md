@@ -88,3 +88,12 @@ bash build.sh
 
 預設 1:100，A4 畫布（1123×794 px）對應實際 11.23m × 7.94m。
 可調整比例尺範圍：1:50 至 1:500，切換時所有物件等比縮放。
+
+---
+
+## 給 AI 畫圖
+
+- [AI畫圖說明.md](AI畫圖說明.md)：給 AI 的規則與可直接貼上的提問（資料不齊先用虛擬資料填滿、交可匯入的 JSON＋預覽圖）。
+- [SKILL.md](SKILL.md)：畫法、座標、圖層規矩與各元件參數。
+- [example.json](example.json)／[example.png](example.png)：全為虛擬資料的範例專案，可用工具「匯入檔案」開啟。
+- 線上版工具：https://atticusjzr.github.io/JTxct/
