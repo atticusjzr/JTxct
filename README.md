@@ -93,7 +93,7 @@ bash build.sh
 
 ## 給 AI 畫圖
 
-- [AI畫圖說明.md](AI畫圖說明.md)：給 AI 的規則與可直接貼上的提問（資料不齊先用虛擬資料填滿、交可匯入的 JSON＋預覽圖）。
+- [ai-guide.md](ai-guide.md)：給 AI 的規則與可直接貼上的提問（資料不齊先用虛擬資料填滿、交可匯入的 JSON＋預覽圖）。
 - [SKILL.md](SKILL.md)：畫法、座標、圖層規矩與各元件參數。
 - 虛擬範例（資料全為虛構，可用工具「匯入檔案」開啟），三張合起來用到大部分元件：
   - [example.json](example.json)／[example.png](example.png)：十字路口（圓弧路緣、雙黃線、斑馬線、停止線、機車停等區、待轉區、黃網格、基準點）
